@@ -1,7 +1,11 @@
+<?php
+// Start session
+session_start();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>Login V1</title>
+	<title>Task Manager | Forgot Password</title>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 <!--===============================================================================================-->	
@@ -30,44 +34,53 @@
 					<img src="images/img-01.png" alt="IMG">
 				</div>
 
-				<form class="login100-form validate-form">
+				<form class="login100-form validate-form" action="reset-request.php" method="POST">
 					<span class="login100-form-title">
-						Member Login
+						Password Recovery
 					</span>
 
+					<?php if(isset($_SESSION['reset_errors'])): ?>
+					<div class="alert alert-danger text-center">
+						<?php 
+							foreach($_SESSION['reset_errors'] as $error) {
+								echo $error . "<br>";
+							}
+							unset($_SESSION['reset_errors']); 
+						?>
+					</div>
+					<?php endif; ?>
+
+					<?php if(isset($_SESSION['reset_success'])): ?>
+					<div class="alert alert-success text-center">
+						<?php echo $_SESSION['reset_success']; unset($_SESSION['reset_success']); ?>
+					</div>
+					<?php endif; ?>
+
 					<div class="wrap-input100 validate-input" data-validate = "Valid email is required: ex@abc.xyz">
-						<input class="input100" type="text" name="email" placeholder="Email">
+						<input class="input100" type="text" name="email" placeholder="Email" value="<?php echo isset($_SESSION['reset_email']) ? $_SESSION['reset_email'] : ''; ?>">
 						<span class="focus-input100"></span>
 						<span class="symbol-input100">
 							<i class="fa fa-envelope" aria-hidden="true"></i>
 						</span>
 					</div>
-
-					<div class="wrap-input100 validate-input" data-validate = "Password is required">
-						<input class="input100" type="password" name="pass" placeholder="Password">
-						<span class="focus-input100"></span>
-						<span class="symbol-input100">
-							<i class="fa fa-lock" aria-hidden="true"></i>
-						</span>
-					</div>
 					
 					<div class="container-login100-form-btn">
 						<button class="login100-form-btn">
-							Login
+							Send Reset Link
 						</button>
 					</div>
 
 					<div class="text-center p-t-12">
 						<span class="txt1">
-							Forgot
+							Remember your password?
 						</span>
-						<a class="txt2" href="#">
-							Username / Password?
+						<a class="txt2" href="index.php">
+							Sign In
 						</a>
 					</div>
 
 					<div class="text-center p-t-136">
-						<a class="txt2" href="#">
+						<a class="txt2" href="create-account.php">
 							Create your Account
 							<i class="fa fa-long-arrow-right m-l-5" aria-hidden="true"></i>
 						</a>
@@ -76,9 +89,6 @@
 			</div>
 		</div>
 	</div>
-	
-	
-
 	
 <!--===============================================================================================-->	
 	<script src="vendor/jquery/jquery-3.2.1.min.js"></script>
