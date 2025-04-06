@@ -47,18 +47,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors['username'] = "Username must be at least 3 characters";
         } else {
             // Check if username already exists
-            $checkStmt = $pdo->prepare("SELECT id FROM users WHERE username = ? AND id != ?");
+            $checkStmt = $pdo->prepare("SELECT id FROM users WHERE name = ? AND id != ?");
             $checkStmt->execute([$newUsername, $userId]);
             
             if ($checkStmt->fetch()) {
-                $errors['username'] = "Username already taken";
+                $errors['name'] = "Username already taken";
             } else {
-                $updateStmt = $pdo->prepare("UPDATE users SET username = ? WHERE id = ?");
+                $updateStmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
                 if ($updateStmt->execute([$newUsername, $userId])) {
                     $success = "Username updated successfully";
-                    $user['username'] = $newUsername;
+                    $user['name'] = $newUsername;
                 } else {
-                    $errors['username'] = "Failed to update username";
+                    $errors['name'] = "Failed to update username";
                 }
             }
         }
