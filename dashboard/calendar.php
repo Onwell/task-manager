@@ -219,6 +219,8 @@ foreach ($tasks as $task) {
         .fc-event.completed {
             opacity: 0.7;
             text-decoration: line-through;
+            background-color: rgba(76, 201, 240, 0.3) !important;
+            border-left: 3px solid var(--success) !important;
         }
         
         .fc-daygrid-event-dot {
@@ -389,6 +391,10 @@ foreach ($tasks as $task) {
             background-color: var(--success);
         }
         
+        #complete-task-btn.completed {
+            background-color: var(--success) !important;
+        }
+        
         @media (max-width: 768px) {
             .dashboard {
                 grid-template-columns: 1fr;
@@ -465,7 +471,7 @@ foreach ($tasks as $task) {
                 <h3>Add New Task</h3>
                 <span class="close-modal">&times;</span>
             </div>
-            <form id="task-form" method="POST">
+            <form id="task-form" method="POST" data-mode="add">
                 <div class="form-group">
                     <label for="task-title">Task Title</label>
                     <input type="text" id="task-title" name="title" required>
@@ -485,6 +491,10 @@ foreach ($tasks as $task) {
                         <option value="medium" selected>Medium</option>
                         <option value="low">Low</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label for="task-progress">Progress (%)</label>
+                    <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
                 </div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
@@ -508,7 +518,7 @@ foreach ($tasks as $task) {
             <div class="task-detail-actions" style="margin-top: 20px; display: flex; gap: 10px;">
                 <button class="button" id="edit-task-btn" style="flex: 1;"><i class="fas fa-edit"></i> Edit</button>
                 <button class="button" id="delete-task-btn" style="background-color: var(--danger); flex: 1;"><i class="fas fa-trash"></i> Delete</button>
-                <button class="button" id="complete-task-btn" style="background-color: var(--success); flex: 1;"><i class="fas fa-check"></i> Toggle Complete</button>
+                <button class="button" id="complete-task-btn" style="flex: 1;"><i class="fas fa-check"></i> Toggle Complete</button>
             </div>
         </div>
     </div>
@@ -589,9 +599,44 @@ foreach ($tasks as $task) {
                     document.getElementById('detail-task-status').textContent = task.extendedProps.completed ? 'Completed' : 'Pending';
                     document.getElementById('detail-task-progress').textContent = task.extendedProps.progress;
                     
+                    // Set up complete button
+                    const completeBtn = document.getElementById('complete-task-btn');
+                    completeBtn.innerHTML = `<i class="fas fa-check"></i> ${task.extendedProps.completed ? 'Mark Incomplete' : 'Mark Complete'}`;
+                    completeBtn.style.backgroundColor = task.extendedProps.completed ? 'var(--success)' : 'var(--primary)';
+                    
                     // Set up button actions
                     document.getElementById('edit-task-btn').onclick = function() {
-                        alert('Edit functionality would go here');
+                        // Close the detail modal
+                        document.getElementById('task-detail-modal').style.display = 'none';
+                        
+                        // Fetch the task data
+                        fetch('get_task.php?task_id=' + task.id)
+                            .then(response => response.json())
+                            .then(taskData => {
+                                if (taskData) {
+                                    // Populate the form with task data
+                                    document.getElementById('task-title').value = taskData.title;
+                                    document.getElementById('task-date').value = taskData.due_date;
+                                    document.getElementById('task-time').value = taskData.time || '';
+                                    document.getElementById('task-priority').value = taskData.priority;
+                                    document.getElementById('task-progress').value = taskData.progress;
+                                    
+                                    // Change the form to edit mode
+                                    const form = document.getElementById('task-form');
+                                    form.setAttribute('data-task-id', task.id);
+                                    form.setAttribute('data-mode', 'edit');
+                                    document.querySelector('.modal-header h3').textContent = 'Edit Task';
+                                    
+                                    // Show the form modal
+                                    document.getElementById('task-modal').style.display = 'flex';
+                                } else {
+                                    alert('Failed to load task data');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('Error loading task data');
+                            });
                     };
                     
                     document.getElementById('delete-task-btn').onclick = function() {
@@ -619,38 +664,53 @@ foreach ($tasks as $task) {
                             });
                         }
                     };
-                    
                     document.getElementById('complete-task-btn').onclick = function() {
-                        const newStatus = !task.extendedProps.completed;
-                        fetch('update_task.php', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                            },
-                            body: 'task_id=' + task.id + '&completed=' + (newStatus ? 1 : 0)
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                task.setExtendedProp('completed', newStatus);
-                                const eventEl = document.querySelector(`.fc-event[data-event-id="${task.id}"]`);
-                                if (eventEl) {
-                                    if (newStatus) {
-                                        eventEl.classList.add('completed');
-                                    } else {
-                                        eventEl.classList.remove('completed');
-                                    }
-                                }
-                                document.getElementById('detail-task-status').textContent = newStatus ? 'Completed' : 'Pending';
-                            } else {
-                                alert('Failed to update task status');
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert('Error updating task status');
-                        });
-                    };
+    const task = info.event;
+    const newStatus = !task.extendedProps.completed;
+    const completeBtn = this;
+
+    fetch('update_task.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `task_id=${task.id}&completed=${newStatus ? 1 : 0}`
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update the event's completed status
+            task.setExtendedProp('completed', newStatus);
+            
+            // Update the UI
+            const eventEl = document.querySelector(`.fc-event[data-event-id="${task.id}"]`);
+            if (eventEl) {
+                eventEl.classList.toggle('completed', newStatus);
+            }
+            
+            // Update the status text in the detail modal
+            document.getElementById('detail-task-status').textContent = newStatus ? 'Completed' : 'Pending';
+            
+            // Update the button text and color
+            completeBtn.innerHTML = `<i class="fas fa-check"></i> ${newStatus ? 'Mark Incomplete' : 'Mark Complete'}`;
+            completeBtn.style.backgroundColor = newStatus ? 'var(--success)' : 'var(--primary)';
+            
+            // Close the detail modal after successful update
+            document.getElementById('task-detail-modal').style.display = 'none';
+        } else {
+            alert(data.message || 'Failed to update task status');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating task status. Check console for details.');
+    });
+};
                     
                     document.getElementById('task-detail-modal').style.display = 'flex';
                 },
@@ -691,7 +751,13 @@ foreach ($tasks as $task) {
             
             // Add task button
             document.getElementById('add-task-btn').addEventListener('click', function() {
+                // Reset form to add mode
+                document.getElementById('task-form').reset();
+                document.getElementById('task-form').setAttribute('data-mode', 'add');
+                document.getElementById('task-form').removeAttribute('data-task-id');
+                document.querySelector('.modal-header h3').textContent = 'Add New Task';
                 document.getElementById('task-date').valueAsDate = new Date();
+                document.getElementById('task-progress').value = 0;
                 taskModal.style.display = 'flex';
             });
             
@@ -720,23 +786,37 @@ foreach ($tasks as $task) {
             // Form submission
             document.getElementById('task-form').addEventListener('submit', function(e) {
                 e.preventDefault();
-                const formData = new FormData(this);
                 
-                fetch('add_task.php', {
+                const formData = new FormData(this);
+                const mode = this.getAttribute('data-mode');
+                const taskId = this.getAttribute('data-task-id');
+                
+                // Set the appropriate action
+                formData.append('action', mode);
+                
+                // If in edit mode, add the task ID
+                if (mode === 'edit' && taskId) {
+                    formData.append('task_id', taskId);
+                }
+                
+                // Send form data to server
+                fetch('process_task.php', {
                     method: 'POST',
                     body: formData
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        location.reload();
+                        // Close the modal and refresh the calendar
+                        taskModal.style.display = 'none';
+                        calendar.refetchEvents();
                     } else {
-                        alert('Failed to add task');
+                        alert('Failed to save task: ' + (data.message || 'Unknown error'));
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Error adding task');
+                    alert('Error saving task');
                 });
             });
         });

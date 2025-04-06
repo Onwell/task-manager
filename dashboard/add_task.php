@@ -55,34 +55,6 @@ foreach ($user['tasks'] as $task) {
         $lowPriorityTasks++;
     }
 }
-
-// Handle form submission for task operations
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Process form submission
-    if (isset($_POST['title']) && isset($_POST['due_date'])) {
-        try {
-            $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, due_date, time, priority, completed, progress) 
-                                  VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $userId,
-                $_POST['title'],
-                $_POST['due_date'],
-                $_POST['time'] ?? '00:00:00',
-                $_POST['priority'] ?? 'medium',
-                $_POST['completed'] ?? 0,
-                $_POST['progress'] ?? 0
-            ]);
-            
-            // Redirect to prevent form resubmission
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-        } catch (PDOException $e) {
-            die("Error adding task: " . $e->getMessage());
-        }
-    }
-    
-    // Handle other operations (delete, update) as needed
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -118,12 +90,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-color: #f5f7fb;
             color: var(--dark);
             line-height: 1.6;
-            /* Removed overflow: hidden */
         }
         
         .container {
             width: 100%;
-            min-height: 100vh; /* Changed from height to min-height */
+            min-height: 100vh;
             margin: 0;
             padding: 20px;
             display: flex;
@@ -160,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: grid;
             grid-template-columns: 250px 1fr;
             gap: 20px;
-            min-height: calc(100% - 70px); /* Changed from height to min-height */
+            min-height: calc(100% - 70px);
             flex-grow: 1;
         }
         
@@ -204,10 +175,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             flex-direction: column;
             gap: 20px;
-            height: auto; /* Changed from height: 100% */
+            height: auto;
             overflow-y: auto;
             padding-right: 10px;
-            -webkit-overflow-scrolling: touch; /* For smooth scrolling on iOS */
+            -webkit-overflow-scrolling: touch;
         }
         
         .overview {
@@ -295,6 +266,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
         }
         
+        .task-item.completed {
+            opacity: 0.8;
+        }
+        
+        .task-item.completed h4 {
+            text-decoration: line-through;
+            color: var(--gray);
+        }
+        
         .task-left {
             display: flex;
             align-items: center;
@@ -368,6 +348,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .progress-fill {
             height: 100%;
             transition: var(--transition);
+        }
+        
+        .task-item.completed .progress-fill {
+            background-color: var(--success) !important;
         }
         
         .action-buttons {
@@ -475,7 +459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             .content {
                 height: auto;
-                overflow-y: visible; /* Allow natural scrolling */
+                overflow-y: visible;
             }
         }
         
@@ -509,7 +493,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         <div class="dashboard">
             <div class="sidebar">
-            <ul class="main-menu">
+                <ul class="main-menu">
                     <li><a href="dashboard/index.php" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
@@ -570,7 +554,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     <div class="task-list">
                         <?php foreach ($user['tasks'] as $task): ?>
-                        <div class="task-item" data-task-id="<?php echo $task['id']; ?>">
+                        <div class="task-item <?php echo $task['completed'] ? 'completed' : ''; ?>" data-task-id="<?php echo $task['id']; ?>">
                             <div class="task-left">
                                 <div class="task-checkbox <?php echo $task['completed'] ? 'checked' : ''; ?>" data-task-id="<?php echo $task['id']; ?>"></div>
                                 <div class="task-content">
@@ -582,12 +566,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <?php endif; ?>
                                     </div>
                                     <div class="progress-bar">
-                                        <div class="progress-fill" style="width: <?php echo $task['progress']; ?>%; background-color: 
-                                            <?php 
-                                                if ($task['priority'] === 'high') echo 'var(--danger)';
-                                                elseif ($task['priority'] === 'medium') echo 'var(--warning)';
-                                                else echo 'var(--success)';
-                                            ?>;">
+                                        <div class="progress-fill" 
+                                             style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%; 
+                                                    background-color: <?php 
+                                                        if ($task['priority'] === 'high') echo 'var(--danger)';
+                                                        elseif ($task['priority'] === 'medium') echo 'var(--warning)';
+                                                        else echo 'var(--success)';
+                                                    ?>;">
                                         </div>
                                     </div>
                                 </div>
@@ -618,7 +603,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h3>Add New Task</h3>
                 <span class="close-modal">&times;</span>
             </div>
-            <form id="task-form" method="POST">
+            <form id="task-form" method="POST" data-mode="add">
                 <div class="form-group">
                     <label for="task-title">Task Title</label>
                     <input type="text" id="task-title" name="title" required>
@@ -653,47 +638,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Handle checkbox toggling with AJAX
             const checkboxes = document.querySelectorAll('.task-checkbox');
             checkboxes.forEach(checkbox => {
+                // Store original progress width
+                const taskItem = checkbox.closest('.task-item');
+                const progressFill = taskItem.querySelector('.progress-fill');
+                if (!checkbox.classList.contains('checked')) {
+                    progressFill.dataset.originalWidth = progressFill.style.width;
+                }
+                
                 checkbox.addEventListener('click', function() {
                     const taskId = this.getAttribute('data-task-id');
                     const isCompleted = !this.classList.contains('checked');
-                    this.classList.toggle('checked');
+                    const taskItem = this.closest('.task-item');
+                    const progressFill = taskItem.querySelector('.progress-fill');
                     
-                    // Send AJAX request to update task status
+                    // Update UI immediately
+                    this.classList.toggle('checked');
+                    taskItem.classList.toggle('completed');
+                    
+                    if (isCompleted) {
+                        progressFill.dataset.originalWidth = progressFill.style.width;
+                        progressFill.style.width = '100%';
+                        progressFill.style.backgroundColor = 'var(--success)';
+                    } else {
+                        progressFill.style.width = progressFill.dataset.originalWidth;
+                        // Restore original color based on priority
+                        const priority = taskItem.querySelector('.tag').className.split(' ')[1];
+                        progressFill.style.backgroundColor = 
+                            priority === 'high' ? 'var(--danger)' :
+                            priority === 'medium' ? 'var(--warning)' :
+                            'var(--success)';
+                    }
+                    
+                    // Send AJAX request
                     fetch('update_task.php', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
                         },
-                        body: 'task_id=' + taskId + '&completed=' + (isCompleted ? 1 : 0)
+                        body: `task_id=${taskId}&completed=${isCompleted ? 1 : 0}`
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) throw new Error('Network error');
+                        return response.json();
+                    })
                     .then(data => {
                         if (!data.success) {
-                            this.classList.toggle('checked'); // Revert if failed
-                        } else {
-                            updateStats();
+                            // Revert UI changes if failed
+                            this.classList.toggle('checked');
+                            taskItem.classList.toggle('completed');
+                            if (isCompleted) {
+                                progressFill.style.width = progressFill.dataset.originalWidth;
+                            } else {
+                                progressFill.style.width = '100%';
+                            }
+                            alert('Failed to update task status');
                         }
                     })
                     .catch(error => {
                         console.error('Error:', error);
-                        this.classList.toggle('checked'); // Revert if error
+                        this.classList.toggle('checked');
+                        taskItem.classList.toggle('completed');
+                        if (isCompleted) {
+                            progressFill.style.width = progressFill.dataset.originalWidth;
+                        } else {
+                            progressFill.style.width = '100%';
+                        }
+                        alert('Error updating task status');
                     });
                 });
             });
             
-            function updateStats() {
-                // Refresh the page to get updated stats
-                location.reload();
-            }
-            
-            // Add task button functionality
+            // Add task button
             document.getElementById('add-task-btn').addEventListener('click', function() {
-                document.getElementById('task-modal').style.display = 'flex';
-                // Set today's date as default
+                document.getElementById('task-form').reset();
+                document.querySelector('.modal-header h3').textContent = 'Add New Task';
+                document.getElementById('task-form').setAttribute('data-mode', 'add');
+                document.getElementById('task-form').removeAttribute('data-task-id');
                 document.getElementById('task-date').valueAsDate = new Date();
+                document.getElementById('task-modal').style.display = 'flex';
             });
             
-            // Close modal when clicking X
+            // Close modal
             document.querySelector('.close-modal').addEventListener('click', function() {
                 document.getElementById('task-modal').style.display = 'none';
             });
@@ -710,12 +735,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 button.addEventListener('click', function(e) {
                     e.stopPropagation();
                     const taskId = this.getAttribute('data-task-id');
-                    const taskItem = this.closest('.task-item');
-                    const taskTitle = taskItem.querySelector('h4').textContent;
                     
-                    // In a real app, show a modal form to edit the task
-                    // For now, we'll just show an alert
-                    alert('Edit task: ' + taskTitle);
+                    fetch('get_task.php?task_id=' + taskId)
+                        .then(response => response.json())
+                        .then(task => {
+                            if (task) {
+                                document.getElementById('task-title').value = task.title;
+                                document.getElementById('task-date').value = task.due_date;
+                                document.getElementById('task-time').value = task.time || '';
+                                document.getElementById('task-priority').value = task.priority;
+                                document.getElementById('task-progress').value = task.progress;
+                                
+                                document.querySelector('.modal-header h3').textContent = 'Edit Task';
+                                document.getElementById('task-form').setAttribute('data-mode', 'edit');
+                                document.getElementById('task-form').setAttribute('data-task-id', taskId);
+                                
+                                document.getElementById('task-modal').style.display = 'flex';
+                            } else {
+                                alert('Failed to load task data');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('Error loading task data');
+                        });
                 });
             });
             
@@ -727,7 +770,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const taskItem = this.closest('.task-item');
                     
                     if (confirm('Are you sure you want to delete this task?')) {
-                        // Send AJAX request to delete the task
                         fetch('delete_task.php', {
                             method: 'POST',
                             headers: {
@@ -739,7 +781,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         .then(data => {
                             if (data.success) {
                                 taskItem.remove();
-                                updateStats();
+                                // Update stats
+                                location.reload();
                             } else {
                                 alert('Failed to delete task');
                             }
@@ -749,6 +792,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             alert('Error deleting task');
                         });
                     }
+                });
+            });
+            
+            // Form submission
+            document.getElementById('task-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(this);
+                const mode = this.getAttribute('data-mode');
+                
+                if (mode === 'edit') {
+                    const taskId = this.getAttribute('data-task-id');
+                    formData.append('task_id', taskId);
+                    formData.append('action', 'edit');
+                } else {
+                    formData.append('action', 'add');
+                }
+                
+                fetch('process_task.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('task-modal').style.display = 'none';
+                        location.reload();
+                    } else {
+                        alert('Failed to save task: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error saving task');
                 });
             });
         });
