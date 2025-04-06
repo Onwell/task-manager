@@ -290,12 +290,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                    <li><a href="dashboard/index.php" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
+                <li><a href="dashboard/index.php" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
+                    <li><a href="activity_log.php"><i class="fas fa-history"></i> Activity Log</a></li>
+                    <li><a href="http://localhost/task-manager/"><i class="fas fa-lock"></i> Logout</a></li>
                 </ul>
             </div>
             

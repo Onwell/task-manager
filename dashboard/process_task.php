@@ -1,90 +1,95 @@
 <?php
-// Start session for user authentication
 session_start();
+require_once 'activity_logger.php'; // Include the activity logger
 
 // Database connection
 $host = 'localhost';
 $dbname = 'task_manager_db';
-$username = 'root'; // Replace with your database username
-$password = ''; // Replace with your database password
+$username = 'root';
+$password = '';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
-    die(json_encode(['success' => false, 'message' => "Database connection failed: " . $e->getMessage()]));
+    die(json_encode(['success' => false, 'message' => 'Database connection failed: ' . $e->getMessage()]));
 }
 
-// Get user ID from session (assuming user is logged in)
-$userId = $_SESSION['user_id'] ?? 1; // Default to 1 if not set (for testing)
-
-// Check if it's a POST request
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
-    exit;
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    die(json_encode(['success' => false, 'message' => 'Not logged in']));
 }
 
+$userId = $_SESSION['user_id'];
 $action = $_POST['action'] ?? '';
 
+// Process add task
 if ($action === 'add') {
-    // Add new task
-    try {
-        $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, due_date, time, priority, completed, progress) 
-                              VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $userId,
-            $_POST['title'],
-            $_POST['due_date'],
-            $_POST['time'] ?? '00:00:00',
-            $_POST['priority'] ?? 'medium',
-            $_POST['completed'] ?? 0,
-            $_POST['progress'] ?? 0
-        ]);
-        
-        echo json_encode(['success' => true]);
-    } catch (PDOException $e) {
-        echo json_encode(['success' => false, 'message' => "Error adding task: " . $e->getMessage()]);
-    }
-} elseif ($action === 'edit') {
-    // Edit existing task
-    if (!isset($_POST['task_id'])) {
-        echo json_encode(['success' => false, 'message' => 'Task ID is required']);
-        exit;
-    }
+    $title = $_POST['title'] ?? '';
+    $dueDate = $_POST['due_date'] ?? '';
+    $time = $_POST['time'] ?? null;
+    $priority = $_POST['priority'] ?? 'medium';
+    $progress = $_POST['progress'] ?? 0;
     
-    $taskId = (int)$_POST['task_id'];
-    
-    // Verify the task belongs to the current user
-    $checkStmt = $pdo->prepare("SELECT id FROM tasks WHERE id = ? AND user_id = ?");
-    $checkStmt->execute([$taskId, $userId]);
-    
-    if (!$checkStmt->fetch()) {
-        echo json_encode(['success' => false, 'message' => 'Task not found or access denied']);
-        exit;
+    if (empty($title) || empty($dueDate)) {
+        die(json_encode(['success' => false, 'message' => 'Title and due date are required']));
     }
     
     try {
-        $stmt = $pdo->prepare("UPDATE tasks SET 
-                              title = ?, 
-                              due_date = ?, 
-                              time = ?, 
-                              priority = ?, 
-                              progress = ? 
-                              WHERE id = ? AND user_id = ?");
-        $stmt->execute([
-            $_POST['title'],
-            $_POST['due_date'],
-            $_POST['time'] ?? '00:00:00',
-            $_POST['priority'] ?? 'medium',
-            $_POST['progress'] ?? 0,
-            $taskId,
-            $userId
-        ]);
+        $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, due_date, time, priority, progress, completed) VALUES (?, ?, ?, ?, ?, ?, 0)");
+        $result = $stmt->execute([$userId, $title, $dueDate, $time, $priority, $progress]);
         
-        echo json_encode(['success' => true]);
+        if ($result) {
+            // Log the activity
+            $taskId = $pdo->lastInsertId();
+            logActivity($pdo, $userId, 'added_task', "Added task: $title");
+            
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Failed to add task']);
+        }
     } catch (PDOException $e) {
-        echo json_encode(['success' => false, 'message' => "Error updating task: " . $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
     }
-} else {
+}
+// Process edit task
+else if ($action === 'edit') {
+    $taskId = $_POST['task_id'] ?? '';
+    $title = $_POST['title'] ?? '';
+    $dueDate = $_POST['due_date'] ?? '';
+    $time = $_POST['time'] ?? null;
+    $priority = $_POST['priority'] ?? 'medium';
+    $progress = $_POST['progress'] ?? 0;
+    
+    if (empty($taskId) || empty($title) || empty($dueDate)) {
+        die(json_encode(['success' => false, 'message' => 'Task ID, title, and due date are required']));
+    }
+    
+    try {
+        // Verify task belongs to the user
+        $checkStmt = $pdo->prepare("SELECT id FROM tasks WHERE id = ? AND user_id = ?");
+        $checkStmt->execute([$taskId, $userId]);
+        if (!$checkStmt->fetch()) {
+            die(json_encode(['success' => false, 'message' => 'Task not found or access denied']));
+        }
+        
+        $stmt = $pdo->prepare("UPDATE tasks SET title = ?, due_date = ?, time = ?, priority = ?, progress = ? WHERE id = ? AND user_id = ?");
+        $result = $stmt->execute([$title, $dueDate, $time, $priority, $progress, $taskId, $userId]);
+        
+        if ($result) {
+            // Log the activity
+            logActivity($pdo, $userId, 'updated_task', "Updated task: $title");
+            
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Failed to update task']);
+        }
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+    }
+}
+// Invalid action
+else {
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
+?>
