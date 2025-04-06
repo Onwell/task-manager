@@ -325,7 +325,7 @@ $user['initial'] = strtoupper(substr($user['name'], 0, 1));
                 <ul class="main-menu">
                 <li><a href="dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
+                    <li><a href="projects.php"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php" class="active"><i class="fas fa-cog"></i> Settings</a></li>
