@@ -5,8 +5,8 @@ session_start();
 // Database connection
 $host = 'localhost';
 $dbname = 'task_manager_db';
-$username = 'root'; // Replace with your database username
-$password = ''; // Replace with your database password
+$username = 'root';
+$password = '';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
@@ -15,10 +15,10 @@ try {
     die("Database connection failed: " . $e->getMessage());
 }
 
-// Get user ID from session (assuming user is logged in)
-$userId = $_SESSION['user_id'] ?? 1; // Default to 1 if not set (for testing)
+// Get user ID from session
+$userId = $_SESSION['user_id'] ?? 1;
 
-// Fetch user data from database
+// Fetch user data
 $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
 $userStmt->execute([$userId]);
 $user = $userStmt->fetch(PDO::FETCH_ASSOC);
@@ -30,7 +30,7 @@ if (!$user) {
 // Get user initial for avatar
 $user['initial'] = strtoupper(substr($user['name'], 0, 1));
 
-// Fetch all tasks (not just current month)
+// Fetch all tasks
 $taskStmt = $pdo->prepare("SELECT * FROM tasks WHERE user_id = ?");
 $taskStmt->execute([$userId]);
 $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -41,11 +41,13 @@ foreach ($tasks as $task) {
     $calendarTasks[] = [
         'id' => $task['id'],
         'title' => $task['title'],
+        'description' => $task['description'],
         'start' => $task['due_date'] . ($task['time'] ? 'T' . $task['time'] : ''),
         'allDay' => empty($task['time']),
         'priority' => $task['priority'],
         'completed' => (bool)$task['completed'],
         'progress' => $task['progress'],
+        'reminder' => (bool)$task['reminder'],
         'color' => $task['priority'] === 'high' ? '#f72585' : 
                   ($task['priority'] === 'medium' ? '#f8961e' : '#4cc9f0')
     ];
@@ -187,6 +189,8 @@ foreach ($tasks as $task) {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
         }
         
         .button {
@@ -194,7 +198,7 @@ foreach ($tasks as $task) {
             color: white;
             border: none;
             padding: 10px 15px;
-            border-radius: 5px;
+            border-radius: var(--border-radius);
             cursor: pointer;
             transition: var(--transition);
         }
@@ -205,102 +209,20 @@ foreach ($tasks as $task) {
         
         #calendar {
             width: 100%;
-            height: 700px;
+            margin: 0 auto;
         }
         
         .fc-event {
             cursor: pointer;
-            border-radius: 4px;
-            padding: 2px 5px;
-            font-size: 0.85em;
-            border: none !important;
         }
         
         .fc-event.completed {
             opacity: 0.7;
             text-decoration: line-through;
-            background-color: rgba(76, 201, 240, 0.3) !important;
-            border-left: 3px solid var(--success) !important;
         }
         
-        .fc-daygrid-event-dot {
-            display: none;
-        }
-        
-        .fc-toolbar-title {
-            font-size: 1.5em;
-            color: var(--dark);
-        }
-        
-        .fc-button {
-            background-color: var(--primary) !important;
-            border: none !important;
-            color: white !important;
-            text-transform: capitalize !important;
-            border-radius: 5px !important;
-            padding: 6px 12px !important;
-        }
-        
-        .fc-button:hover {
-            background-color: var(--secondary) !important;
-        }
-        
-        .fc-button-active {
-            background-color: var(--secondary) !important;
-        }
-        
-        .fc-daygrid-day-number {
-            color: var(--dark);
-            font-weight: 500;
-        }
-        
-        .fc-day-today {
-            background-color: rgba(67, 97, 238, 0.1) !important;
-        }
-        
-        .fc-daygrid-day-events {
-            margin-top: 2px;
-        }
-        
-        .fc-daygrid-event {
-            margin-bottom: 2px;
-        }
-        
-        .fc-event-time {
-            font-weight: 500;
-        }
-        
-        /* New styles for task day highlighting */
-        .fc-daygrid-day.has-tasks {
-            background-color: rgba(76, 201, 240, 0.1);
-            position: relative;
-        }
-        
-        .fc-daygrid-day.has-tasks::after {
-            content: '';
-            position: absolute;
-            bottom: 5px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background-color: var(--primary);
-        }
-        
-        .fc-day-today.has-tasks {
-            background-color: rgba(67, 97, 238, 0.2);
-        }
-        
-        .fc-day-today.has-tasks::after {
-            background-color: var(--danger);
-            width: 8px;
-            height: 8px;
-        }
-        
-        .fc-daygrid-day-number {
-            position: relative;
-            z-index: 1;
+        .fc-day.has-tasks {
+            background-color: rgba(67, 97, 238, 0.05);
         }
         
         /* Modal styles */
@@ -316,7 +238,7 @@ foreach ($tasks as $task) {
             justify-content: center;
             align-items: center;
         }
-
+        
         .modal-content {
             background-color: white;
             padding: 25px;
@@ -325,37 +247,38 @@ foreach ($tasks as $task) {
             max-width: 500px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
-
+        
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
         }
-
+        
         .close-modal, .close-detail-modal {
             cursor: pointer;
             font-size: 24px;
             color: var(--gray);
             transition: var(--transition);
         }
-
+        
         .close-modal:hover, .close-detail-modal:hover {
             color: var(--dark);
         }
-
+        
         .form-group {
             margin-bottom: 15px;
         }
-
+        
         .form-group label {
             display: block;
             margin-bottom: 5px;
             font-weight: 500;
         }
-
+        
         .form-group input,
-        .form-group select {
+        .form-group select,
+        .form-group textarea {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -363,12 +286,50 @@ foreach ($tasks as $task) {
             font-size: 14px;
             transition: var(--transition);
         }
-
+        
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        
         .form-group input:focus,
-        .form-group select:focus {
+        .form-group select:focus,
+        .form-group textarea:focus {
             border-color: var(--primary);
             outline: none;
             box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+        }
+        
+        .form-group.checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-group.checkbox-group label {
+            margin-bottom: 0;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        
+        .form-group.checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        
+        .task-detail-content {
+            margin-bottom: 20px;
+        }
+        
+        .task-detail-content p {
+            margin-bottom: 10px;
+        }
+        
+        .task-detail-description {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: var(--border-radius);
         }
         
         .tag {
@@ -391,8 +352,10 @@ foreach ($tasks as $task) {
             background-color: var(--success);
         }
         
-        #complete-task-btn.completed {
-            background-color: var(--success) !important;
+        .task-detail-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
         }
         
         @media (max-width: 768px) {
@@ -405,25 +368,13 @@ foreach ($tasks as $task) {
                 height: auto;
             }
             
-            #calendar {
-                height: 500px;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            #calendar {
-                height: 400px;
+            .content {
+                height: auto;
+                overflow-y: visible;
             }
             
-            .fc-toolbar {
+            .task-detail-actions {
                 flex-direction: column;
-                gap: 10px;
-            }
-            
-            .fc-toolbar-chunk {
-                display: flex;
-                justify-content: center;
-                width: 100%;
             }
         }
     </style>
@@ -443,7 +394,7 @@ foreach ($tasks as $task) {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                <li><a href="dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php" class="active"><i class="fas fa-calendar"></i> Calendar</a></li>
@@ -479,11 +430,15 @@ foreach ($tasks as $task) {
                     <input type="text" id="task-title" name="title" required>
                 </div>
                 <div class="form-group">
-                    <label for="task-date">Date</label>
+                    <label for="task-description">Description</label>
+                    <textarea id="task-description" name="description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="task-date">Due Date</label>
                     <input type="date" id="task-date" name="due_date" required>
                 </div>
                 <div class="form-group">
-                    <label for="task-time">Time</label>
+                    <label for="task-time">Time (optional)</label>
                     <input type="time" id="task-time" name="time">
                 </div>
                 <div class="form-group">
@@ -498,6 +453,10 @@ foreach ($tasks as $task) {
                     <label for="task-progress">Progress (%)</label>
                     <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
                 </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="task-reminder" name="reminder">
+                    <label for="task-reminder">Set Reminder</label>
+                </div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
         </div>
@@ -511,13 +470,14 @@ foreach ($tasks as $task) {
                 <span class="close-detail-modal">&times;</span>
             </div>
             <div class="task-detail-content">
+                <div class="task-detail-description" id="detail-task-description"></div>
                 <p><strong>Date:</strong> <span id="detail-task-date"></span></p>
                 <p><strong>Time:</strong> <span id="detail-task-time"></span></p>
                 <p><strong>Priority:</strong> <span id="detail-task-priority" class="tag"></span></p>
                 <p><strong>Status:</strong> <span id="detail-task-status"></span></p>
                 <p><strong>Progress:</strong> <span id="detail-task-progress"></span>%</p>
             </div>
-            <div class="task-detail-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+            <div class="task-detail-actions">
                 <button class="button" id="edit-task-btn" style="flex: 1;"><i class="fas fa-edit"></i> Edit</button>
                 <button class="button" id="delete-task-btn" style="background-color: var(--danger); flex: 1;"><i class="fas fa-trash"></i> Delete</button>
                 <button class="button" id="complete-task-btn" style="flex: 1;"><i class="fas fa-check"></i> Toggle Complete</button>
@@ -539,7 +499,6 @@ foreach ($tasks as $task) {
                 },
                 events: <?php echo json_encode($calendarTasks); ?>,
                 eventContent: function(arg) {
-                    // Custom event content
                     const timeEl = arg.event.start ? document.createElement('div') : null;
                     if (timeEl) {
                         timeEl.className = 'fc-event-time';
@@ -557,19 +516,16 @@ foreach ($tasks as $task) {
                     return { domNodes: [container] };
                 },
                 eventDidMount: function(arg) {
-                    // Add completed class if task is completed
                     if (arg.event.extendedProps.completed) {
                         arg.el.classList.add('completed');
                     }
                     
-                    // Highlight the day cell if it has tasks
                     const dayEl = document.querySelector(`.fc-day[data-date="${arg.event.startStr.split('T')[0]}"]`);
                     if (dayEl) {
                         dayEl.classList.add('has-tasks');
                     }
                 },
                 datesSet: function(info) {
-                    // After calendar renders, highlight days with tasks
                     setTimeout(() => {
                         const events = calendar.getEvents();
                         const daysWithTasks = new Set();
@@ -588,48 +544,47 @@ foreach ($tasks as $task) {
                     }, 100);
                 },
                 eventClick: function(info) {
-                    // Show task details when clicked
                     const task = info.event;
                     document.getElementById('detail-task-title').textContent = task.title;
+                    document.getElementById('detail-task-description').textContent = 
+                        task.extendedProps.description || 'No description provided';
                     document.getElementById('detail-task-date').textContent = task.start ? task.start.toLocaleDateString() : '';
-                    document.getElementById('detail-task-time').textContent = task.start && !task.allDay ? task.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'All day';
+                    document.getElementById('detail-task-time').textContent = task.start && !task.allDay ? 
+                        task.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'All day';
                     
                     const priorityEl = document.getElementById('detail-task-priority');
-                    priorityEl.textContent = task.extendedProps.priority.charAt(0).toUpperCase() + task.extendedProps.priority.slice(1);
+                    priorityEl.textContent = task.extendedProps.priority.charAt(0).toUpperCase() + 
+                                           task.extendedProps.priority.slice(1);
                     priorityEl.className = 'tag ' + task.extendedProps.priority;
                     
-                    document.getElementById('detail-task-status').textContent = task.extendedProps.completed ? 'Completed' : 'Pending';
+                    document.getElementById('detail-task-status').textContent = 
+                        task.extendedProps.completed ? 'Completed' : 'Pending';
                     document.getElementById('detail-task-progress').textContent = task.extendedProps.progress;
                     
-                    // Set up complete button
                     const completeBtn = document.getElementById('complete-task-btn');
                     completeBtn.innerHTML = `<i class="fas fa-check"></i> ${task.extendedProps.completed ? 'Mark Incomplete' : 'Mark Complete'}`;
                     completeBtn.style.backgroundColor = task.extendedProps.completed ? 'var(--success)' : 'var(--primary)';
                     
                     // Set up button actions
                     document.getElementById('edit-task-btn').onclick = function() {
-                        // Close the detail modal
                         document.getElementById('task-detail-modal').style.display = 'none';
                         
-                        // Fetch the task data
                         fetch('get_task.php?task_id=' + task.id)
                             .then(response => response.json())
                             .then(taskData => {
                                 if (taskData) {
-                                    // Populate the form with task data
                                     document.getElementById('task-title').value = taskData.title;
+                                    document.getElementById('task-description').value = taskData.description || '';
                                     document.getElementById('task-date').value = taskData.due_date;
                                     document.getElementById('task-time').value = taskData.time || '';
                                     document.getElementById('task-priority').value = taskData.priority;
                                     document.getElementById('task-progress').value = taskData.progress;
+                                    document.getElementById('task-reminder').checked = taskData.reminder == 1;
                                     
-                                    // Change the form to edit mode
                                     const form = document.getElementById('task-form');
                                     form.setAttribute('data-task-id', task.id);
                                     form.setAttribute('data-mode', 'edit');
                                     document.querySelector('.modal-header h3').textContent = 'Edit Task';
-                                    
-                                    // Show the form modal
                                     document.getElementById('task-modal').style.display = 'flex';
                                 } else {
                                     alert('Failed to load task data');
@@ -666,58 +621,44 @@ foreach ($tasks as $task) {
                             });
                         }
                     };
+                    
                     document.getElementById('complete-task-btn').onclick = function() {
-    const task = info.event;
-    const newStatus = !task.extendedProps.completed;
-    const completeBtn = this;
-
-    fetch('update_task.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `task_id=${task.id}&completed=${newStatus ? 1 : 0}`
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Update the event's completed status
-            task.setExtendedProp('completed', newStatus);
-            
-            // Update the UI
-            const eventEl = document.querySelector(`.fc-event[data-event-id="${task.id}"]`);
-            if (eventEl) {
-                eventEl.classList.toggle('completed', newStatus);
-            }
-            
-            // Update the status text in the detail modal
-            document.getElementById('detail-task-status').textContent = newStatus ? 'Completed' : 'Pending';
-            
-            // Update the button text and color
-            completeBtn.innerHTML = `<i class="fas fa-check"></i> ${newStatus ? 'Mark Incomplete' : 'Mark Complete'}`;
-            completeBtn.style.backgroundColor = newStatus ? 'var(--success)' : 'var(--primary)';
-            
-            // Close the detail modal after successful update
-            document.getElementById('task-detail-modal').style.display = 'none';
-        } else {
-            alert(data.message || 'Failed to update task status');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error updating task status. Check console for details.');
-    });
-};
+                        const newStatus = !task.extendedProps.completed;
+                        const completeBtn = this;
+                        
+                        fetch('update_task.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: `task_id=${task.id}&completed=${newStatus ? 1 : 0}`
+                        })
+                        .then(response => {
+                            if (!response.ok) throw new Error('Network response was not ok');
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                task.setExtendedProp('completed', newStatus);
+                                const eventEl = document.querySelector(`.fc-event[data-event-id="${task.id}"]`);
+                                if (eventEl) eventEl.classList.toggle('completed', newStatus);
+                                document.getElementById('detail-task-status').textContent = newStatus ? 'Completed' : 'Pending';
+                                completeBtn.innerHTML = `<i class="fas fa-check"></i> ${newStatus ? 'Mark Incomplete' : 'Mark Complete'}`;
+                                completeBtn.style.backgroundColor = newStatus ? 'var(--success)' : 'var(--primary)';
+                                document.getElementById('task-detail-modal').style.display = 'none';
+                            } else {
+                                alert(data.message || 'Failed to update task status');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('Error updating task status');
+                        });
+                    };
                     
                     document.getElementById('task-detail-modal').style.display = 'flex';
                 },
                 dateClick: function(info) {
-                    // Set date when clicking on calendar
                     document.getElementById('task-date').value = info.dateStr;
                     document.getElementById('task-modal').style.display = 'flex';
                 }
@@ -725,12 +666,10 @@ foreach ($tasks as $task) {
             calendar.render();
             
             function updateDayHighlights() {
-                // Remove all existing highlights
                 document.querySelectorAll('.fc-day.has-tasks').forEach(day => {
                     day.classList.remove('has-tasks');
                 });
                 
-                // Re-highlight days with remaining tasks
                 const events = calendar.getEvents();
                 const daysWithTasks = new Set();
                 
@@ -741,9 +680,7 @@ foreach ($tasks as $task) {
                 
                 daysWithTasks.forEach(dateStr => {
                     const dayEl = document.querySelector(`.fc-day[data-date="${dateStr}"]`);
-                    if (dayEl) {
-                        dayEl.classList.add('has-tasks');
-                    }
+                    if (dayEl) dayEl.classList.add('has-tasks');
                 });
             }
             
@@ -751,9 +688,7 @@ foreach ($tasks as $task) {
             const taskModal = document.getElementById('task-modal');
             const taskDetailModal = document.getElementById('task-detail-modal');
             
-            // Add task button
             document.getElementById('add-task-btn').addEventListener('click', function() {
-                // Reset form to add mode
                 document.getElementById('task-form').reset();
                 document.getElementById('task-form').setAttribute('data-mode', 'add');
                 document.getElementById('task-form').removeAttribute('data-task-id');
@@ -763,7 +698,6 @@ foreach ($tasks as $task) {
                 taskModal.style.display = 'flex';
             });
             
-            // Close modals
             document.querySelector('.close-modal').addEventListener('click', function() {
                 taskModal.style.display = 'none';
             });
@@ -772,20 +706,14 @@ foreach ($tasks as $task) {
                 taskDetailModal.style.display = 'none';
             });
             
-            // Close modals when clicking outside
             taskModal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.style.display = 'none';
-                }
+                if (e.target === this) this.style.display = 'none';
             });
             
             taskDetailModal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.style.display = 'none';
-                }
+                if (e.target === this) this.style.display = 'none';
             });
             
-            // Form submission
             document.getElementById('task-form').addEventListener('submit', function(e) {
                 e.preventDefault();
                 
@@ -793,23 +721,25 @@ foreach ($tasks as $task) {
                 const mode = this.getAttribute('data-mode');
                 const taskId = this.getAttribute('data-task-id');
                 
-                // Set the appropriate action
                 formData.append('action', mode);
-                
-                // If in edit mode, add the task ID
                 if (mode === 'edit' && taskId) {
                     formData.append('task_id', taskId);
                 }
                 
-                // Send form data to server
+                const submitButton = this.querySelector('button[type="submit"]');
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                
                 fetch('process_task.php', {
                     method: 'POST',
                     body: formData
                 })
                 .then(response => response.json())
                 .then(data => {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = 'Save Task';
+                    
                     if (data.success) {
-                        // Close the modal and refresh the calendar
                         taskModal.style.display = 'none';
                         calendar.refetchEvents();
                     } else {
@@ -818,6 +748,8 @@ foreach ($tasks as $task) {
                 })
                 .catch(error => {
                     console.error('Error:', error);
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = 'Save Task';
                     alert('Error saving task');
                 });
             });

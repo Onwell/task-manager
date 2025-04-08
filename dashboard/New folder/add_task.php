@@ -95,7 +95,7 @@ foreach ($user['tasks'] as $task) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task Manager / Dashboard</title>
+    <title>Task Manager / Add Task</title>
     <style>
         :root {
             --primary: #4361ee;
@@ -125,6 +125,23 @@ foreach ($user['tasks'] as $task) {
             color: var(--dark);
             line-height: 1.6;
         }
+
+        .form-group.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-group.checkbox-group label {
+    margin-bottom: 0;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.form-group.checkbox-group input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
         
         .container {
             width: 100%;
@@ -631,8 +648,8 @@ foreach ($user['tasks'] as $task) {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                    <li><a href="#"><i class="fas fa-home" class="active"></i> Dashboard</a></li>
-                    <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
+                    <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="add_task.php" class="active"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
@@ -684,6 +701,91 @@ foreach ($user['tasks'] as $task) {
                         <p>Upcoming</p>
                     </div>
                 </div>
+                
+                <div class="card" style="flex-grow: 1;">
+                    <div class="section-header">
+                        <h2>My Tasks</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <form method="GET" action="add_task.php" class="search-bar">
+                                <input type="text" name="search" class="search-input" placeholder="Search tasks..." value="<?php echo htmlspecialchars($searchQuery); ?>">
+                                <button type="submit" class="search-button"><i class="fas fa-search"></i></button>
+                            </form>
+                            <button class="button" id="add-task-btn"><i class="fas fa-plus"></i> Add Task</button>
+                        </div>
+                    </div>
+                    
+                    <div class="task-list">
+                        <?php if (empty($user['tasks'])): ?>
+                            <div class="empty-state">
+                                <i class="far fa-check-circle"></i>
+                                <h3>No tasks found</h3>
+                                <p><?php echo empty($searchQuery) ? 'Get started by adding your first task' : 'No tasks match your search'; ?></p>
+                                <button class="button" id="empty-add-btn">Add Task</button>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($user['tasks'] as $task): 
+                                $dueDate = new DateTime($task['due_date']);
+                                $today = new DateTime();
+                                $today->setTime(0, 0, 0);
+                                
+                                $dueStatus = '';
+                                if (!$task['completed']) {
+                                    if ($dueDate < $today) {
+                                        $dueStatus = 'overdue';
+                                    } elseif ($dueDate == $today) {
+                                        $dueStatus = 'today';
+                                    } else {
+                                        $dueStatus = 'upcoming';
+                                    }
+                                }
+                            ?>
+                            <div class="task-item <?php echo $task['completed'] ? 'completed' : $dueStatus; ?>" data-task-id="<?php echo $task['id']; ?>">
+                                <div class="task-left">
+                                    <div class="task-checkbox <?php echo $task['completed'] ? 'checked' : ''; ?>" data-task-id="<?php echo $task['id']; ?>"></div>
+                                    <div class="task-content">
+                                        <h4><?php echo htmlspecialchars($task['title']); ?></h4>
+                                        <div class="task-meta">
+                                            <span><i class="far fa-calendar"></i> <?php echo htmlspecialchars(date('F j, Y', strtotime($task['due_date']))); ?></span>
+                                            <?php if (!empty($task['time'])): ?>
+                                            <span><i class="far fa-clock"></i> <?php echo htmlspecialchars(date('h:i A', strtotime($task['time']))); ?></span>
+                                            <?php endif; ?>
+                                            <?php if (!$task['completed'] && $dueStatus): ?>
+                                            <span class="due-date-badge <?php echo $dueStatus; ?>">
+                                                <?php 
+                                                    echo $dueStatus === 'overdue' ? 'Overdue' : 
+                                                         ($dueStatus === 'today' ? 'Due Today' : 'Upcoming');
+                                                ?>
+                                            </span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" 
+                                                 style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%; 
+                                                        background-color: <?php 
+                                                            if ($task['priority'] === 'high') echo 'var(--danger)';
+                                                            elseif ($task['priority'] === 'medium') echo 'var(--warning)';
+                                                            else echo 'var(--success)';
+                                                        ?>;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="task-right">
+                                    <span class="tag <?php echo $task['priority']; ?>"><?php echo ucfirst($task['priority']); ?></span>
+                                    <div class="action-buttons">
+                                        <div class="action-button edit-task" style="background-color: var(--primary);" data-task-id="<?php echo $task['id']; ?>">
+                                            <i class="fas fa-pen"></i>
+                                        </div>
+                                        <div class="action-button delete-task" style="background-color: var(--danger);" data-task-id="<?php echo $task['id']; ?>">
+                                            <i class="fas fa-trash"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -724,11 +826,10 @@ foreach ($user['tasks'] as $task) {
                     <label for="task-progress">Progress (%)</label>
                     <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
                 </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="reminder"> Set Reminder
-                    </label>
-                </div>
+                <div class="form-group checkbox-group">
+    <input type="checkbox" id="task-reminder" name="reminder">
+    <label for="task-reminder">Set Reminder</label>
+</div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
         </div>

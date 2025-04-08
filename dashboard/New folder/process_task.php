@@ -26,18 +26,32 @@ $action = $_POST['action'] ?? '';
 // Process add task
 if ($action === 'add') {
     $title = $_POST['title'] ?? '';
+    $description = $_POST['description'] ?? ''; // Added this line
     $dueDate = $_POST['due_date'] ?? '';
     $time = $_POST['time'] ?? null;
     $priority = $_POST['priority'] ?? 'medium';
     $progress = $_POST['progress'] ?? 0;
+    $reminder = isset($_POST['reminder']) ? 1 : 0; // Added this line
     
     if (empty($title) || empty($dueDate)) {
         die(json_encode(['success' => false, 'message' => 'Title and due date are required']));
     }
     
     try {
-        $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, due_date, time, priority, progress, completed) VALUES (?, ?, ?, ?, ?, ?, 0)");
-        $result = $stmt->execute([$userId, $title, $dueDate, $time, $priority, $progress]);
+        // Updated query to include description and reminder
+        $stmt = $pdo->prepare("INSERT INTO tasks 
+            (user_id, title, description, due_date, time, priority, progress, reminder, completed) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)");
+        $result = $stmt->execute([
+            $userId, 
+            $title, 
+            $description, 
+            $dueDate, 
+            $time, 
+            $priority, 
+            $progress, 
+            $reminder
+        ]);
         
         if ($result) {
             // Log the activity
@@ -56,10 +70,12 @@ if ($action === 'add') {
 else if ($action === 'edit') {
     $taskId = $_POST['task_id'] ?? '';
     $title = $_POST['title'] ?? '';
+    $description = $_POST['description'] ?? ''; // Added this line
     $dueDate = $_POST['due_date'] ?? '';
     $time = $_POST['time'] ?? null;
     $priority = $_POST['priority'] ?? 'medium';
     $progress = $_POST['progress'] ?? 0;
+    $reminder = isset($_POST['reminder']) ? 1 : 0; // Added this line
     
     if (empty($taskId) || empty($title) || empty($dueDate)) {
         die(json_encode(['success' => false, 'message' => 'Task ID, title, and due date are required']));
@@ -73,8 +89,27 @@ else if ($action === 'edit') {
             die(json_encode(['success' => false, 'message' => 'Task not found or access denied']));
         }
         
-        $stmt = $pdo->prepare("UPDATE tasks SET title = ?, due_date = ?, time = ?, priority = ?, progress = ? WHERE id = ? AND user_id = ?");
-        $result = $stmt->execute([$title, $dueDate, $time, $priority, $progress, $taskId, $userId]);
+        // Updated query to include description and reminder
+        $stmt = $pdo->prepare("UPDATE tasks SET 
+            title = ?, 
+            description = ?, 
+            due_date = ?, 
+            time = ?, 
+            priority = ?, 
+            progress = ?, 
+            reminder = ? 
+            WHERE id = ? AND user_id = ?");
+        $result = $stmt->execute([
+            $title, 
+            $description, 
+            $dueDate, 
+            $time, 
+            $priority, 
+            $progress, 
+            $reminder, 
+            $taskId, 
+            $userId
+        ]);
         
         if ($result) {
             // Log the activity

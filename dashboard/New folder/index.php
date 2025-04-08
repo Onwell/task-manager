@@ -5,8 +5,8 @@ session_start();
 // Database connection
 $host = 'localhost';
 $dbname = 'task_manager_db';
-$username = 'root'; // Replace with your database username
-$password = ''; // Replace with your database password
+$username = 'root';
+$password = '';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
@@ -15,10 +15,10 @@ try {
     die("Database connection failed: " . $e->getMessage());
 }
 
-// Get user ID from session (assuming user is logged in)
-$userId = $_SESSION['user_id'] ?? 1; // Default to 1 if not set (for testing)
+// Get user ID from session
+$userId = $_SESSION['user_id'] ?? 1;
 
-// Fetch user data from database
+// Fetch user data
 $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
 $userStmt->execute([$userId]);
 $user = $userStmt->fetch(PDO::FETCH_ASSOC);
@@ -30,9 +30,25 @@ if (!$user) {
 // Get user initial for avatar
 $user['initial'] = strtoupper(substr($user['name'], 0, 1));
 
+// Handle search query
+$searchQuery = $_GET['search'] ?? '';
+$whereClause = "WHERE user_id = ?";
+$params = [$userId];
+
+if (!empty($searchQuery)) {
+    $whereClause .= " AND (title LIKE ? OR description LIKE ?)";
+    $params[] = "%$searchQuery%";
+    $params[] = "%$searchQuery%";
+}
+
 // Fetch tasks from database
-$taskStmt = $pdo->prepare("SELECT * FROM tasks WHERE user_id = ?");
-$taskStmt->execute([$userId]);
+$taskStmt = $pdo->prepare("SELECT * FROM tasks $whereClause ORDER BY 
+    CASE 
+        WHEN due_date < CURDATE() THEN 0 
+        WHEN due_date = CURDATE() THEN 1 
+        ELSE 2 
+    END, due_date ASC");
+$taskStmt->execute($params);
 $user['tasks'] = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Calculate statistics
@@ -41,6 +57,9 @@ $completedTasks = 0;
 $highPriorityTasks = 0;
 $mediumPriorityTasks = 0;
 $lowPriorityTasks = 0;
+$overdueTasks = 0;
+$todayTasks = 0;
+$upcomingTasks = 0;
 
 foreach ($user['tasks'] as $task) {
     if ($task['completed']) {
@@ -54,6 +73,21 @@ foreach ($user['tasks'] as $task) {
     } elseif ($task['priority'] === 'low') {
         $lowPriorityTasks++;
     }
+    
+    // Calculate due date status
+    $dueDate = new DateTime($task['due_date']);
+    $today = new DateTime();
+    $today->setTime(0, 0, 0);
+    
+    if (!$task['completed']) {
+        if ($dueDate < $today) {
+            $overdueTasks++;
+        } elseif ($dueDate == $today) {
+            $todayTasks++;
+        } else {
+            $upcomingTasks++;
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -61,7 +95,7 @@ foreach ($user['tasks'] as $task) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task Manager / Add Task</title>
+    <title>Task Manager / Dashboard</title>
     <style>
         :root {
             --primary: #4361ee;
@@ -178,13 +212,12 @@ foreach ($user['tasks'] as $task) {
             height: auto;
             overflow-y: auto;
             padding-right: 10px;
-            -webkit-overflow-scrolling: touch;
         }
         
         .overview {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
         }
         
         .card {
@@ -197,6 +230,8 @@ foreach ($user['tasks'] as $task) {
         .stat-card {
             display: flex;
             flex-direction: column;
+            position: relative;
+            overflow: hidden;
         }
         
         .stat-card .icon {
@@ -220,10 +255,45 @@ foreach ($user['tasks'] as $task) {
             font-size: 14px;
         }
         
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .search-input {
+            flex-grow: 1;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            transition: var(--transition);
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+        }
+        
+        .search-button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .search-button:hover {
+            background-color: var(--secondary);
+        }
+        
         .task-list {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
             flex-grow: 1;
             overflow-y: auto;
             padding-bottom: 20px;
@@ -234,6 +304,8 @@ foreach ($user['tasks'] as $task) {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
         }
         
         .button {
@@ -241,7 +313,7 @@ foreach ($user['tasks'] as $task) {
             color: white;
             border: none;
             padding: 10px 15px;
-            border-radius: 5px;
+            border-radius: var(--border-radius);
             cursor: pointer;
             transition: var(--transition);
         }
@@ -254,20 +326,29 @@ foreach ($user['tasks'] as $task) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px;
+            padding: 18px 20px;
             background-color: white;
             border-radius: var(--border-radius);
             box-shadow: var(--box-shadow);
             transition: var(--transition);
+            border-left: 4px solid;
         }
         
-        .task-item:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+        .task-item.overdue {
+            border-left-color: var(--danger);
+        }
+        
+        .task-item.today {
+            border-left-color: var(--warning);
+        }
+        
+        .task-item.upcoming {
+            border-left-color: var(--success);
         }
         
         .task-item.completed {
-            opacity: 0.8;
+            opacity: 0.7;
+            border-left-color: #ccc;
         }
         
         .task-item.completed h4 {
@@ -275,10 +356,16 @@ foreach ($user['tasks'] as $task) {
             color: var(--gray);
         }
         
+        .task-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+        }
+        
         .task-left {
             display: flex;
             align-items: center;
             gap: 15px;
+            flex-grow: 1;
         }
         
         .task-checkbox {
@@ -306,6 +393,10 @@ foreach ($user['tasks'] as $task) {
             font-size: 14px;
         }
         
+        .task-content {
+            flex-grow: 1;
+        }
+        
         .task-content h4 {
             margin-bottom: 5px;
         }
@@ -315,6 +406,25 @@ foreach ($user['tasks'] as $task) {
             gap: 10px;
             font-size: 12px;
             color: var(--gray);
+        }
+        
+        .due-date-badge {
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: white;
+        }
+        
+        .due-date-badge.overdue {
+            background-color: var(--danger);
+        }
+        
+        .due-date-badge.today {
+            background-color: var(--warning);
+        }
+        
+        .due-date-badge.upcoming {
+            background-color: var(--success);
         }
         
         .tag {
@@ -338,20 +448,21 @@ foreach ($user['tasks'] as $task) {
         
         .progress-bar {
             width: 100%;
-            height: 10px;
-            background-color: #e9ecef;
-            border-radius: 5px;
-            margin-top: 5px;
+            height: 8px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            margin-top: 8px;
             overflow: hidden;
         }
         
         .progress-fill {
             height: 100%;
-            transition: var(--transition);
+            border-radius: 4px;
+            transition: width 0.6s ease;
         }
         
         .task-item.completed .progress-fill {
-            background-color: var(--success) !important;
+            background-color: #ccc !important;
         }
         
         .action-buttons {
@@ -374,7 +485,28 @@ foreach ($user['tasks'] as $task) {
         .action-button:hover {
             transform: scale(1.1);
         }
-
+        
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--gray);
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #ddd;
+        }
+        
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+        
         /* Modal styles */
         .modal {
             display: none;
@@ -388,7 +520,7 @@ foreach ($user['tasks'] as $task) {
             justify-content: center;
             align-items: center;
         }
-
+        
         .modal-content {
             background-color: white;
             padding: 25px;
@@ -397,37 +529,38 @@ foreach ($user['tasks'] as $task) {
             max-width: 500px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
-
+        
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
         }
-
+        
         .close-modal {
             cursor: pointer;
             font-size: 24px;
             color: var(--gray);
             transition: var(--transition);
         }
-
+        
         .close-modal:hover {
             color: var(--dark);
         }
-
+        
         .form-group {
             margin-bottom: 15px;
         }
-
+        
         .form-group label {
             display: block;
             margin-bottom: 5px;
             font-weight: 500;
         }
-
+        
         .form-group input,
-        .form-group select {
+        .form-group select,
+        .form-group textarea {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -435,9 +568,15 @@ foreach ($user['tasks'] as $task) {
             font-size: 14px;
             transition: var(--transition);
         }
-
+        
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        
         .form-group input:focus,
-        .form-group select:focus {
+        .form-group select:focus,
+        .form-group textarea:focus {
             border-color: var(--primary);
             outline: none;
             box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
@@ -447,10 +586,6 @@ foreach ($user['tasks'] as $task) {
             .dashboard {
                 grid-template-columns: 1fr;
                 height: auto;
-            }
-            
-            .overview {
-                grid-template-columns: repeat(2, 1fr);
             }
             
             .sidebar {
@@ -464,10 +599,6 @@ foreach ($user['tasks'] as $task) {
         }
         
         @media (max-width: 480px) {
-            .overview {
-                grid-template-columns: 1fr;
-            }
-            
             .task-item {
                 flex-direction: column;
                 align-items: flex-start;
@@ -476,6 +607,12 @@ foreach ($user['tasks'] as $task) {
             
             .action-buttons {
                 align-self: flex-end;
+            }
+            
+            header {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
             }
         }
     </style>
@@ -494,8 +631,8 @@ foreach ($user['tasks'] as $task) {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                    <li><a href="dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a></li>
-                    <li><a href="add_task.php" class="active"><i class="fas fa-tasks"></i> Tasks</a></li>
+                    <li><a href="#"><i class="fas fa-home" class="active"></i> Dashboard</a></li>
+                    <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
@@ -527,71 +664,24 @@ foreach ($user['tasks'] as $task) {
                         <div class="icon" style="background-color: rgba(247, 37, 133, 0.1); color: var(--danger);">
                             <i class="fas fa-exclamation"></i>
                         </div>
-                        <h3><?php echo $highPriorityTasks; ?></h3>
-                        <p>High Priority</p>
+                        <h3><?php echo $overdueTasks; ?></h3>
+                        <p>Overdue</p>
                     </div>
                     
                     <div class="card stat-card">
                         <div class="icon" style="background-color: rgba(248, 150, 30, 0.1); color: var(--warning);">
-                            <i class="fas fa-tasks"></i>
+                            <i class="fas fa-calendar-day"></i>
                         </div>
-                        <h3><?php echo $mediumPriorityTasks; ?></h3>
-                        <p>Medium Priority</p>
+                        <h3><?php echo $todayTasks; ?></h3>
+                        <p>Due Today</p>
                     </div>
                     
                     <div class="card stat-card">
                         <div class="icon" style="background-color: rgba(76, 201, 240, 0.1); color: var(--success);">
-                            <i class="fas fa-tasks"></i>
+                            <i class="fas fa-calendar-alt"></i>
                         </div>
-                        <h3><?php echo $lowPriorityTasks; ?></h3>
-                        <p>Low Priority</p>
-                    </div>
-                </div>
-                
-                <div class="card" style="flex-grow: 1;">
-                    <div class="section-header">
-                        <h2>My Tasks</h2>
-                        <button class="button" id="add-task-btn"><i class="fas fa-plus"></i> Add Task</button>
-                    </div>
-                    
-                    <div class="task-list">
-                        <?php foreach ($user['tasks'] as $task): ?>
-                        <div class="task-item <?php echo $task['completed'] ? 'completed' : ''; ?>" data-task-id="<?php echo $task['id']; ?>">
-                            <div class="task-left">
-                                <div class="task-checkbox <?php echo $task['completed'] ? 'checked' : ''; ?>" data-task-id="<?php echo $task['id']; ?>"></div>
-                                <div class="task-content">
-                                    <h4><?php echo htmlspecialchars($task['title']); ?></h4>
-                                    <div class="task-meta">
-                                        <span><i class="far fa-calendar"></i> <?php echo htmlspecialchars(date('F j, Y', strtotime($task['due_date']))); ?></span>
-                                        <?php if (!empty($task['time'])): ?>
-                                        <span><i class="far fa-clock"></i> <?php echo htmlspecialchars(date('h:i A', strtotime($task['time']))); ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" 
-                                             style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%; 
-                                                    background-color: <?php 
-                                                        if ($task['priority'] === 'high') echo 'var(--danger)';
-                                                        elseif ($task['priority'] === 'medium') echo 'var(--warning)';
-                                                        else echo 'var(--success)';
-                                                    ?>;">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="task-right">
-                                <span class="tag <?php echo $task['priority']; ?>"><?php echo ucfirst($task['priority']); ?></span>
-                                <div class="action-buttons">
-                                    <div class="action-button edit-task" style="background-color: var(--primary);" data-task-id="<?php echo $task['id']; ?>">
-                                        <i class="fas fa-pen"></i>
-                                    </div>
-                                    <div class="action-button delete-task" style="background-color: var(--danger);" data-task-id="<?php echo $task['id']; ?>">
-                                        <i class="fas fa-trash"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
+                        <h3><?php echo $upcomingTasks; ?></h3>
+                        <p>Upcoming</p>
                     </div>
                 </div>
             </div>
@@ -611,11 +701,15 @@ foreach ($user['tasks'] as $task) {
                     <input type="text" id="task-title" name="title" required>
                 </div>
                 <div class="form-group">
-                    <label for="task-date">Date</label>
+                    <label for="task-description">Description</label>
+                    <textarea id="task-description" name="description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="task-date">Due Date</label>
                     <input type="date" id="task-date" name="due_date" required>
                 </div>
                 <div class="form-group">
-                    <label for="task-time">Time</label>
+                    <label for="task-time">Time (optional)</label>
                     <input type="time" id="task-time" name="time">
                 </div>
                 <div class="form-group">
@@ -629,6 +723,11 @@ foreach ($user['tasks'] as $task) {
                 <div class="form-group">
                     <label for="task-progress">Progress (%)</label>
                     <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="reminder"> Set Reminder
+                    </label>
                 </div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
@@ -660,7 +759,7 @@ foreach ($user['tasks'] as $task) {
                     if (isCompleted) {
                         progressFill.dataset.originalWidth = progressFill.style.width;
                         progressFill.style.width = '100%';
-                        progressFill.style.backgroundColor = 'var(--success)';
+                        progressFill.style.backgroundColor = '#ccc';
                     } else {
                         progressFill.style.width = progressFill.dataset.originalWidth;
                         // Restore original color based on priority
@@ -694,6 +793,9 @@ foreach ($user['tasks'] as $task) {
                                 progressFill.style.width = '100%';
                             }
                             alert('Failed to update task status');
+                        } else {
+                            // Reload to update stats
+                            location.reload();
                         }
                     })
                     .catch(error => {
@@ -710,14 +812,20 @@ foreach ($user['tasks'] as $task) {
                 });
             });
             
-            // Add task button
-            document.getElementById('add-task-btn').addEventListener('click', function() {
-                document.getElementById('task-form').reset();
-                document.querySelector('.modal-header h3').textContent = 'Add New Task';
-                document.getElementById('task-form').setAttribute('data-mode', 'add');
-                document.getElementById('task-form').removeAttribute('data-task-id');
-                document.getElementById('task-date').valueAsDate = new Date();
-                document.getElementById('task-modal').style.display = 'flex';
+            // Add task buttons
+            const addTaskButtons = [document.getElementById('add-task-btn')];
+            const emptyAddBtn = document.getElementById('empty-add-btn');
+            if (emptyAddBtn) addTaskButtons.push(emptyAddBtn);
+            
+            addTaskButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    document.getElementById('task-form').reset();
+                    document.querySelector('.modal-header h3').textContent = 'Add New Task';
+                    document.getElementById('task-form').setAttribute('data-mode', 'add');
+                    document.getElementById('task-form').removeAttribute('data-task-id');
+                    document.getElementById('task-date').valueAsDate = new Date();
+                    document.getElementById('task-modal').style.display = 'flex';
+                });
             });
             
             // Close modal
@@ -743,6 +851,7 @@ foreach ($user['tasks'] as $task) {
                         .then(task => {
                             if (task) {
                                 document.getElementById('task-title').value = task.title;
+                                document.getElementById('task-description').value = task.description || '';
                                 document.getElementById('task-date').value = task.due_date;
                                 document.getElementById('task-time').value = task.time || '';
                                 document.getElementById('task-priority').value = task.priority;
@@ -772,6 +881,9 @@ foreach ($user['tasks'] as $task) {
                     const taskItem = this.closest('.task-item');
                     
                     if (confirm('Are you sure you want to delete this task?')) {
+                        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        this.style.pointerEvents = 'none';
+                        
                         fetch('delete_task.php', {
                             method: 'POST',
                             headers: {
@@ -787,11 +899,15 @@ foreach ($user['tasks'] as $task) {
                                 location.reload();
                             } else {
                                 alert('Failed to delete task');
+                                this.innerHTML = '<i class="fas fa-trash"></i>';
+                                this.style.pointerEvents = 'auto';
                             }
                         })
                         .catch(error => {
                             console.error('Error:', error);
                             alert('Error deleting task');
+                            this.innerHTML = '<i class="fas fa-trash"></i>';
+                            this.style.pointerEvents = 'auto';
                         });
                     }
                 });
@@ -800,6 +916,10 @@ foreach ($user['tasks'] as $task) {
             // Form submission
             document.getElementById('task-form').addEventListener('submit', function(e) {
                 e.preventDefault();
+                
+                const submitButton = this.querySelector('button[type="submit"]');
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
                 
                 const formData = new FormData(this);
                 const mode = this.getAttribute('data-mode');
@@ -818,6 +938,9 @@ foreach ($user['tasks'] as $task) {
                 })
                 .then(response => response.json())
                 .then(data => {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = 'Save Task';
+                    
                     if (data.success) {
                         document.getElementById('task-modal').style.display = 'none';
                         location.reload();
@@ -827,6 +950,8 @@ foreach ($user['tasks'] as $task) {
                 })
                 .catch(error => {
                     console.error('Error:', error);
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = 'Save Task';
                     alert('Error saving task');
                 });
             });
