@@ -16,7 +16,11 @@ try {
 }
 
 // Get user ID from session
-$userId = $_SESSION['user_id'] ?? 1;
+$userId = $_SESSION['user_id'] ?? null;
+if (!$userId) {
+    header('Location: login.php');
+    exit;
+}
 
 // Fetch user data
 $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
@@ -89,6 +93,15 @@ foreach ($user['tasks'] as $task) {
         }
     }
 }
+
+// Get shared tasks count
+$sharedStmt = $pdo->prepare("SELECT COUNT(*) as count FROM shared_tasks WHERE shared_with_id = ?");
+$sharedStmt->execute([$userId]);
+$sharedTasks = $sharedStmt->fetch(PDO::FETCH_ASSOC)['count'];
+
+// Get total users count
+$usersStmt = $pdo->query("SELECT COUNT(*) as count FROM users");
+$totalUsers = $usersStmt->fetch(PDO::FETCH_ASSOC)['count'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -310,6 +323,7 @@ foreach ($user['tasks'] as $task) {
         
         .button {
             background-color: var(--primary);
+            text-decoration: none;
             color: white;
             border: none;
             padding: 10px 15px;
@@ -582,6 +596,17 @@ foreach ($user['tasks'] as $task) {
             box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
         }
         
+        .form-group.checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-group.checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        
         @media (max-width: 768px) {
             .dashboard {
                 grid-template-columns: 1fr;
@@ -595,6 +620,10 @@ foreach ($user['tasks'] as $task) {
             .content {
                 height: auto;
                 overflow-y: visible;
+            }
+            
+            .overview {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             }
         }
         
@@ -631,14 +660,13 @@ foreach ($user['tasks'] as $task) {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                    <li><a href="#"><i class="fas fa-home" class="active"></i> Dashboard</a></li>
+                    <li><a href="index.php" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
                     <li><a href="activity_log.php"><i class="fas fa-history"></i> Activity Log</a></li>
-                    <li><a href="http://localhost/task-manager/"><i class="fas fa-lock"></i> Logout</a></li>
+                    <li><a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 </ul>
             </div>
             
@@ -683,6 +711,98 @@ foreach ($user['tasks'] as $task) {
                         <h3><?php echo $upcomingTasks; ?></h3>
                         <p>Upcoming</p>
                     </div>
+
+                    <div class="card stat-card">
+                        <div class="icon" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
+                            <i class="fas fa-share-alt"></i>
+                        </div>
+                        <h3><?php echo $sharedTasks; ?></h3>
+                        <p>Shared Tasks</p>
+                    </div>
+
+                    <div class="card stat-card">
+                        <div class="icon" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3><?php echo $totalUsers; ?></h3>
+                        <p>Total Users</p>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="section-header">
+                        <h2>Recent Tasks</h2>
+                    </div>
+                    
+                    <div class="task-list">
+                        <?php if (empty($user['tasks'])): ?>
+                            <div class="empty-state">
+                                <i class="far fa-check-circle"></i>
+                                <h3>No tasks found</h3>
+                                <p><?php echo empty($searchQuery) ? 'Get started by adding your first task' : 'No tasks match your search'; ?></p>
+                                <button id="empty-add-btn" class="button">Add Task</button>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach (array_slice($user['tasks'], 0, 5) as $task): 
+                                $dueDate = new DateTime($task['due_date']);
+                                $today = new DateTime();
+                                $today->setTime(0, 0, 0);
+                                
+                                $dueStatus = '';
+                                if (!$task['completed']) {
+                                    if ($dueDate < $today) {
+                                        $dueStatus = 'overdue';
+                                    } elseif ($dueDate == $today) {
+                                        $dueStatus = 'today';
+                                    } else {
+                                        $dueStatus = 'upcoming';
+                                    }
+                                }
+                            ?>
+                            <div class="task-item <?php echo $task['completed'] ? 'completed' : $dueStatus; ?>" data-task-id="<?php echo $task['id']; ?>">
+                                <div class="task-left">
+                                    
+                                    <div class="task-content">
+                                        <h4><?php echo htmlspecialchars($task['title']); ?></h4>
+                                        <div class="task-meta">
+                                            <span><i class="far fa-calendar"></i> <?php echo htmlspecialchars(date('M j, Y', strtotime($task['due_date']))); ?></span>
+                                            <?php if (!empty($task['time'])): ?>
+                                                <span><i class="far fa-clock"></i> <?php echo htmlspecialchars(date('g:i A', strtotime($task['time']))); ?></span>
+                                            <?php endif; ?>
+                                            
+                                            <?php if (!$task['completed'] && $dueStatus): ?>
+                                                <span class="due-date-badge <?php echo $dueStatus; ?>">
+                                                    <?php echo ucfirst($dueStatus); ?>
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
+                                        
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" 
+                                                 style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%;
+                                                        background-color: <?php 
+                                                            if ($task['priority'] === 'high') echo 'var(--danger)';
+                                                            elseif ($task['priority'] === 'medium') echo 'var(--warning)';
+                                                            else echo 'var(--success)';
+                                                        ?>;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="task-right">
+                                    <span class="tag <?php echo $task['priority']; ?>">
+                                        <?php echo ucfirst($task['priority']); ?>
+                                    </span>
+                                    
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                            <div style="text-align: center; margin-top: 15px;" >
+                                <a href="add_task.php" class="button">View All Tasks</a>
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -696,6 +816,7 @@ foreach ($user['tasks'] as $task) {
                 <span class="close-modal">&times;</span>
             </div>
             <form id="task-form" method="POST" data-mode="add">
+                <input type="hidden" name="task_id" id="task-id">
                 <div class="form-group">
                     <label for="task-title">Task Title</label>
                     <input type="text" id="task-title" name="title" required>
@@ -724,10 +845,9 @@ foreach ($user['tasks'] as $task) {
                     <label for="task-progress">Progress (%)</label>
                     <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
                 </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="reminder"> Set Reminder
-                    </label>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="task-reminder" name="reminder">
+                    <label for="task-reminder">Set Reminder</label>
                 </div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
@@ -737,15 +857,7 @@ foreach ($user['tasks'] as $task) {
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Handle checkbox toggling with AJAX
-            const checkboxes = document.querySelectorAll('.task-checkbox');
-            checkboxes.forEach(checkbox => {
-                // Store original progress width
-                const taskItem = checkbox.closest('.task-item');
-                const progressFill = taskItem.querySelector('.progress-fill');
-                if (!checkbox.classList.contains('checked')) {
-                    progressFill.dataset.originalWidth = progressFill.style.width;
-                }
-                
+            document.querySelectorAll('.task-checkbox').forEach(checkbox => {
                 checkbox.addEventListener('click', function() {
                     const taskId = this.getAttribute('data-task-id');
                     const isCompleted = !this.classList.contains('checked');
@@ -762,7 +874,6 @@ foreach ($user['tasks'] as $task) {
                         progressFill.style.backgroundColor = '#ccc';
                     } else {
                         progressFill.style.width = progressFill.dataset.originalWidth;
-                        // Restore original color based on priority
                         const priority = taskItem.querySelector('.tag').className.split(' ')[1];
                         progressFill.style.backgroundColor = 
                             priority === 'high' ? 'var(--danger)' :
@@ -794,7 +905,6 @@ foreach ($user['tasks'] as $task) {
                             }
                             alert('Failed to update task status');
                         } else {
-                            // Reload to update stats
                             location.reload();
                         }
                     })
@@ -820,7 +930,6 @@ foreach ($user['tasks'] as $task) {
             addTaskButtons.forEach(button => {
                 button.addEventListener('click', function() {
                     document.getElementById('task-form').reset();
-                    document.querySelector('.modal-header h3').textContent = 'Add New Task';
                     document.getElementById('task-form').setAttribute('data-mode', 'add');
                     document.getElementById('task-form').removeAttribute('data-task-id');
                     document.getElementById('task-date').valueAsDate = new Date();
@@ -849,7 +958,8 @@ foreach ($user['tasks'] as $task) {
                     fetch('get_task.php?task_id=' + taskId)
                         .then(response => response.json())
                         .then(task => {
-                            if (task) {
+                            if (task && task.success) {
+                                document.getElementById('task-id').value = task.id;
                                 document.getElementById('task-title').value = task.title;
                                 document.getElementById('task-description').value = task.description || '';
                                 document.getElementById('task-date').value = task.due_date;
@@ -859,11 +969,10 @@ foreach ($user['tasks'] as $task) {
                                 
                                 document.querySelector('.modal-header h3').textContent = 'Edit Task';
                                 document.getElementById('task-form').setAttribute('data-mode', 'edit');
-                                document.getElementById('task-form').setAttribute('data-task-id', taskId);
                                 
                                 document.getElementById('task-modal').style.display = 'flex';
                             } else {
-                                alert('Failed to load task data');
+                                alert(task?.message || 'Failed to load task data');
                             }
                         })
                         .catch(error => {
@@ -889,16 +998,15 @@ foreach ($user['tasks'] as $task) {
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                             },
-                            body: 'task_id=' + taskId
+                            body: `task_id=${taskId}`
                         })
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
                                 taskItem.remove();
-                                // Update stats
                                 location.reload();
                             } else {
-                                alert('Failed to delete task');
+                                alert(data.message || 'Failed to delete task');
                                 this.innerHTML = '<i class="fas fa-trash"></i>';
                                 this.style.pointerEvents = 'auto';
                             }
@@ -924,14 +1032,6 @@ foreach ($user['tasks'] as $task) {
                 const formData = new FormData(this);
                 const mode = this.getAttribute('data-mode');
                 
-                if (mode === 'edit') {
-                    const taskId = this.getAttribute('data-task-id');
-                    formData.append('task_id', taskId);
-                    formData.append('action', 'edit');
-                } else {
-                    formData.append('action', 'add');
-                }
-                
                 fetch('process_task.php', {
                     method: 'POST',
                     body: formData
@@ -945,7 +1045,7 @@ foreach ($user['tasks'] as $task) {
                         document.getElementById('task-modal').style.display = 'none';
                         location.reload();
                     } else {
-                        alert('Failed to save task: ' + (data.message || 'Unknown error'));
+                        alert(data.message || 'Failed to save task');
                     }
                 })
                 .catch(error => {

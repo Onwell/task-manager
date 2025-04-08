@@ -25,6 +25,19 @@ try {
     die("Database connection failed: " . $e->getMessage());
 }
 
+// Delete activities older than 30 days
+try {
+    $deleteStmt = $pdo->prepare("DELETE FROM activity_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    $deleteStmt->execute();
+    $deletedCount = $deleteStmt->rowCount();
+    
+    if ($deletedCount > 0) {
+        error_log("Deleted $deletedCount old activity logs");
+    }
+} catch (PDOException $e) {
+    error_log("Failed to delete old activity logs: " . $e->getMessage());
+}
+
 // Fetch user data
 $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
 $userStmt->execute([$_SESSION['user_id']]);
@@ -37,26 +50,8 @@ if (!$user) {
 // Get user initial for avatar
 $user['initial'] = strtoupper(substr($user['name'], 0, 1));
 
-// Fetch activity logs with debugging
+// Fetch activity logs
 try {
-    // First check if the table exists
-    $tableCheck = $pdo->query("SHOW TABLES LIKE 'activity_logs'");
-    if ($tableCheck->rowCount() == 0) {
-        error_log("Table 'activity_logs' does not exist!");
-    } else {
-        error_log("Table 'activity_logs' exists, attempting to fetch records");
-    }
-    
-    // Try to get a single record to verify structure
-    $testQuery = $pdo->query("SELECT * FROM activity_logs LIMIT 1");
-    $columnInfo = [];
-    for ($i = 0; $i < $testQuery->columnCount(); $i++) {
-        $meta = $testQuery->getColumnMeta($i);
-        $columnInfo[] = $meta['name'];
-    }
-    error_log("Table columns: " . implode(", ", $columnInfo));
-    
-    // Fetch actual logs
     $logsStmt = $pdo->prepare("
         SELECT al.*, u.name as user_name 
         FROM activity_logs al
@@ -67,9 +62,6 @@ try {
     ");
     $logsStmt->execute([$_SESSION['user_id']]);
     $logs = $logsStmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Debug logging
-    error_log("Fetched " . count($logs) . " activity logs for user " . $_SESSION['user_id']);
 } catch (PDOException $e) {
     error_log("Failed to fetch activity logs: " . $e->getMessage());
     $logs = [];
@@ -82,7 +74,10 @@ function formatAction($action) {
         'updated_task' => 'updated a task',
         'deleted_task' => 'deleted a task',
         'completed_task' => 'completed a task',
-        'uncompleted_task' => 'marked a task as incomplete'
+        'uncompleted_task' => 'marked a task as incomplete',
+        'shared_task' => 'shared a task',
+        'login' => 'logged in',
+        'logout' => 'logged out'
     ];
     
     return $actions[$action] ?? $action;
@@ -94,9 +89,6 @@ function formatAction($action) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Manager / Activity Log</title>
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <style>
         :root {
             --primary: #4361ee;
@@ -299,9 +291,8 @@ function formatAction($action) {
         <div class="dashboard">
             <div class="sidebar">
                 <ul class="main-menu">
-                <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
-                    <li><a href="add_task.php" ><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
+                    <li><a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
@@ -318,19 +309,24 @@ function formatAction($action) {
                     
                     <div class="activity-log">
                         <?php if (empty($logs)): ?>
-                            <div class="alert alert-info">No activities found yet.</div>
+                            <div class="alert alert-info">No activities found yet. Activities older than 30 days are automatically deleted.</div>
                         <?php else: ?>
                             <?php foreach ($logs as $log): ?>
                                 <div class="log-item">
                                     <div class="log-icon">
                                         <?php
-                                        // Choose icon based on action
                                         $icon = 'fa-user';
                                         if (strpos($log['action'], 'task') !== false) {
                                             $icon = 'fa-tasks';
                                         }
                                         if (strpos($log['action'], 'completed') !== false) {
                                             $icon = 'fa-check-circle';
+                                        }
+                                        if (strpos($log['action'], 'shared') !== false) {
+                                            $icon = 'fa-share-alt';
+                                        }
+                                        if (strpos($log['action'], 'login') !== false || strpos($log['action'], 'logout') !== false) {
+                                            $icon = 'fa-sign-in-alt';
                                         }
                                         ?>
                                         <i class="fas <?php echo $icon; ?>"></i>

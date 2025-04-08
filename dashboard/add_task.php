@@ -28,8 +28,9 @@ if (!$user) {
 
 $user['initial'] = strtoupper(substr($user['name'], 0, 1));
 
-// Handle search query
+// Handle search query and date filter
 $searchQuery = $_GET['search'] ?? '';
+$dateFilter = $_GET['date_filter'] ?? 'all'; // all, today, week, month, overdue
 $params = [':user_id' => $userId];
 
 // Build the task query
@@ -46,12 +47,29 @@ $taskQuery = "
     FROM tasks t
     LEFT JOIN shared_tasks st ON t.id = st.task_id AND st.shared_with_id = :user_id
     LEFT JOIN users u ON t.user_id = u.id
-    WHERE t.user_id = :user_id OR st.shared_with_id = :user_id
+    WHERE (t.user_id = :user_id OR st.shared_with_id = :user_id)
 ";
 
 if (!empty($searchQuery)) {
     $taskQuery .= " AND (t.title LIKE :search OR t.description LIKE :search)";
     $params[':search'] = "%$searchQuery%";
+}
+
+// Add date filtering
+switch ($dateFilter) {
+    case 'today':
+        $taskQuery .= " AND t.due_date = CURDATE()";
+        break;
+    case 'week':
+        $taskQuery .= " AND t.due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)";
+        break;
+    case 'month':
+        $taskQuery .= " AND t.due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 1 MONTH)";
+        break;
+    case 'overdue':
+        $taskQuery .= " AND t.due_date < CURDATE() AND t.completed = 0";
+        break;
+    // 'all' shows all tasks
 }
 
 $taskQuery .= "
@@ -362,6 +380,7 @@ foreach ($user['tasks'] as $task) {
             background-color: var(--primary);
             color: white;
             border: none;
+            height: 40px;
             padding: 10px 15px;
             border-radius: var(--border-radius);
             cursor: pointer;
@@ -650,6 +669,33 @@ foreach ($user['tasks'] as $task) {
             box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
         }
         
+        /* Filter styles */
+        .filter-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            background-color: white;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        /* Add this to your existing CSS */
+        .stat-card .icon.purple {
+            background-color: rgba(111, 66, 193, 0.1);
+            color: #6f42c1;
+        }
+        
         @media (max-width: 768px) {
             .dashboard {
                 grid-template-columns: 1fr;
@@ -665,13 +711,6 @@ foreach ($user['tasks'] as $task) {
                 overflow-y: visible;
             }
         }
-
-        /* Add this to your existing CSS */
-.stat-card .icon.purple {
-    background-color: rgba(111, 66, 193, 0.1);
-    color: #6f42c1;
-}
-
         
         @media (max-width: 480px) {
             .task-item {
@@ -708,7 +747,6 @@ foreach ($user['tasks'] as $task) {
                 <ul class="main-menu">
                     <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php" class="active"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
@@ -760,30 +798,27 @@ foreach ($user['tasks'] as $task) {
                     </div>
 
                     <div class="card stat-card">
-    <div class="icon" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
-        <i class="fas fa-share-alt"></i>
-    </div>
-    <h3><?php echo $sharedTasks; ?></h3>
-    <p>Shared Tasks</p>
-</div>
+                        <div class="icon" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
+                            <i class="fas fa-share-alt"></i>
+                        </div>
+                        <h3><?php echo $sharedTasks; ?></h3>
+                        <p>Shared Tasks</p>
+                    </div>
 
-<div class="card stat-card">
-    <div class="icon purple">
-        <i class="fas fa-users"></i>
-    </div>
-    <h3><?php echo $totalUsers; ?></h3>
-    <p>Total Users</p>
-</div>
-
-
-
+                    <div class="card stat-card">
+                        <div class="icon purple">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3><?php echo $totalUsers; ?></h3>
+                        <p>Total Users</p>
+                    </div>
                 </div>
                 
                 <div class="card" style="flex-grow: 1;">
                     <div class="section-header">
                         <h2>My Tasks</h2>
                         <div style="display: flex; gap: 10px;">
-                            <form method="GET" action="add_task.php" class="search-bar">
+                            <form method="GET" action="" class="search-bar">
                                 <input type="text" name="search" class="search-input" placeholder="Search tasks..." value="<?php echo htmlspecialchars($searchQuery); ?>">
                                 <button type="submit" class="search-button"><i class="fas fa-search"></i></button>
                             </form>
@@ -791,12 +826,28 @@ foreach ($user['tasks'] as $task) {
                         </div>
                     </div>
                     
+                    <!-- Date Filter Dropdown -->
+                    <div class="filter-container">
+                        <form method="GET" action="" style="display: flex; gap: 10px;">
+                            <?php if (!empty($searchQuery)): ?>
+                                <input type="hidden" name="search" value="<?php echo htmlspecialchars($searchQuery); ?>">
+                            <?php endif; ?>
+                            <select name="date_filter" class="filter-select" onchange="this.form.submit()">
+                                <option value="all" <?php echo $dateFilter === 'all' ? 'selected' : ''; ?>>All Dates</option>
+                                <option value="today" <?php echo $dateFilter === 'today' ? 'selected' : ''; ?>>Today</option>
+                                <option value="week" <?php echo $dateFilter === 'week' ? 'selected' : ''; ?>>This Week</option>
+                                <option value="month" <?php echo $dateFilter === 'month' ? 'selected' : ''; ?>>This Month</option>
+                                <option value="overdue" <?php echo $dateFilter === 'overdue' ? 'selected' : ''; ?>>Overdue</option>
+                            </select>
+                        </form>
+                    </div>
+                    
                     <div class="task-list">
                         <?php if (empty($user['tasks'])): ?>
                             <div class="empty-state">
                                 <i class="far fa-check-circle"></i>
                                 <h3>No tasks found</h3>
-                                <p><?php echo empty($searchQuery) ? 'Get started by adding your first task' : 'No tasks match your search'; ?></p>
+                                <p><?php echo (empty($searchQuery) && $dateFilter === 'all' ? 'Get started by adding your first task' : 'No tasks match your criteria'); ?></p>
                                 <button class="button" id="empty-add-btn">Add Task</button>
                             </div>
                         <?php else: ?>

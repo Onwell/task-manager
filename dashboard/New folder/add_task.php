@@ -1,5 +1,4 @@
 <?php
-// Start session for user authentication
 session_start();
 
 // Database connection
@@ -27,27 +26,64 @@ if (!$user) {
     die("User not found");
 }
 
-// Get user initial for avatar
 $user['initial'] = strtoupper(substr($user['name'], 0, 1));
 
-// Handle search query
+// Handle search query and date filter
 $searchQuery = $_GET['search'] ?? '';
-$whereClause = "WHERE user_id = ?";
-$params = [$userId];
+$dateFilter = $_GET['date_filter'] ?? 'all'; // all, today, week, month, overdue
+$params = [':user_id' => $userId];
+
+// Build the task query
+$taskQuery = "
+    SELECT 
+        t.*,
+        u.name AS owner_name,
+        CASE 
+            WHEN t.user_id = :user_id THEN 'owned'
+            ELSE 'shared'
+        END AS task_type,
+        st.can_edit AS can_edit,
+        st.shared_at AS shared_at
+    FROM tasks t
+    LEFT JOIN shared_tasks st ON t.id = st.task_id AND st.shared_with_id = :user_id
+    LEFT JOIN users u ON t.user_id = u.id
+    WHERE (t.user_id = :user_id OR st.shared_with_id = :user_id)
+";
 
 if (!empty($searchQuery)) {
-    $whereClause .= " AND (title LIKE ? OR description LIKE ?)";
-    $params[] = "%$searchQuery%";
-    $params[] = "%$searchQuery%";
+    $taskQuery .= " AND (t.title LIKE :search OR t.description LIKE :search)";
+    $params[':search'] = "%$searchQuery%";
 }
 
-// Fetch tasks from database
-$taskStmt = $pdo->prepare("SELECT * FROM tasks $whereClause ORDER BY 
-    CASE 
-        WHEN due_date < CURDATE() THEN 0 
-        WHEN due_date = CURDATE() THEN 1 
-        ELSE 2 
-    END, due_date ASC");
+// Add date filtering
+switch ($dateFilter) {
+    case 'today':
+        $taskQuery .= " AND t.due_date = CURDATE()";
+        break;
+    case 'week':
+        $taskQuery .= " AND t.due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)";
+        break;
+    case 'month':
+        $taskQuery .= " AND t.due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 1 MONTH)";
+        break;
+    case 'overdue':
+        $taskQuery .= " AND t.due_date < CURDATE() AND t.completed = 0";
+        break;
+    // 'all' shows all tasks
+}
+
+$taskQuery .= "
+    ORDER BY 
+        CASE 
+            WHEN t.due_date < CURDATE() AND t.completed = 0 THEN 0
+            WHEN t.due_date = CURDATE() AND t.completed = 0 THEN 1
+            ELSE 2
+        END,
+        t.due_date ASC,
+        t.priority DESC
+";
+
+$taskStmt = $pdo->prepare($taskQuery);
 $taskStmt->execute($params);
 $user['tasks'] = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -60,6 +96,21 @@ $lowPriorityTasks = 0;
 $overdueTasks = 0;
 $todayTasks = 0;
 $upcomingTasks = 0;
+
+// Count shared tasks (tasks shared with the current user)
+$sharedTasksStmt = $pdo->prepare("
+    SELECT COUNT(*) as shared_count 
+    FROM shared_tasks 
+    WHERE shared_with_id = :user_id
+");
+$sharedTasksStmt->execute([':user_id' => $userId]);
+$sharedTasks = $sharedTasksStmt->fetch(PDO::FETCH_ASSOC)['shared_count'];
+
+
+// Count total users
+$userCountStmt = $pdo->query("SELECT COUNT(*) as total_users FROM users");
+$totalUsers = $userCountStmt->fetch(PDO::FETCH_ASSOC)['total_users'];
+
 
 foreach ($user['tasks'] as $task) {
     if ($task['completed']) {
@@ -74,7 +125,6 @@ foreach ($user['tasks'] as $task) {
         $lowPriorityTasks++;
     }
     
-    // Calculate due date status
     $dueDate = new DateTime($task['due_date']);
     $today = new DateTime();
     $today->setTime(0, 0, 0);
@@ -89,6 +139,7 @@ foreach ($user['tasks'] as $task) {
         }
     }
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -127,21 +178,21 @@ foreach ($user['tasks'] as $task) {
         }
 
         .form-group.checkbox-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
-.form-group.checkbox-group label {
-    margin-bottom: 0;
-    font-weight: normal;
-    cursor: pointer;
-}
+        .form-group.checkbox-group label {
+            margin-bottom: 0;
+            font-weight: normal;
+            cursor: pointer;
+        }
 
-.form-group.checkbox-group input[type="checkbox"] {
-    width: auto;
-    margin: 0;
-}
+        .form-group.checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
         
         .container {
             width: 100%;
@@ -329,6 +380,7 @@ foreach ($user['tasks'] as $task) {
             background-color: var(--primary);
             color: white;
             border: none;
+            height: 40px;
             padding: 10px 15px;
             border-radius: var(--border-radius);
             cursor: pointer;
@@ -463,6 +515,12 @@ foreach ($user['tasks'] as $task) {
             background-color: var(--success);
         }
         
+        .tag.shared {
+            background-color: var(--secondary);
+            margin-left: 8px;
+            font-size: 10px;
+        }
+        
         .progress-bar {
             width: 100%;
             height: 8px;
@@ -503,6 +561,11 @@ foreach ($user['tasks'] as $task) {
             transform: scale(1.1);
         }
         
+        .action-button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         .empty-state {
             display: flex;
             flex-direction: column;
@@ -522,6 +585,13 @@ foreach ($user['tasks'] as $task) {
         .empty-state h3 {
             margin-bottom: 10px;
             color: var(--dark);
+        }
+        
+        .task-owner {
+            font-size: 12px;
+            color: var(--gray);
+            margin-top: 3px;
+            font-style: italic;
         }
         
         /* Modal styles */
@@ -599,6 +669,33 @@ foreach ($user['tasks'] as $task) {
             box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
         }
         
+        /* Filter styles */
+        .filter-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            background-color: white;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        /* Add this to your existing CSS */
+        .stat-card .icon.purple {
+            background-color: rgba(111, 66, 193, 0.1);
+            color: #6f42c1;
+        }
+        
         @media (max-width: 768px) {
             .dashboard {
                 grid-template-columns: 1fr;
@@ -650,7 +747,6 @@ foreach ($user['tasks'] as $task) {
                 <ul class="main-menu">
                     <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php" class="active"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
@@ -700,13 +796,29 @@ foreach ($user['tasks'] as $task) {
                         <h3><?php echo $upcomingTasks; ?></h3>
                         <p>Upcoming</p>
                     </div>
+
+                    <div class="card stat-card">
+                        <div class="icon" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
+                            <i class="fas fa-share-alt"></i>
+                        </div>
+                        <h3><?php echo $sharedTasks; ?></h3>
+                        <p>Shared Tasks</p>
+                    </div>
+
+                    <div class="card stat-card">
+                        <div class="icon purple">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3><?php echo $totalUsers; ?></h3>
+                        <p>Total Users</p>
+                    </div>
                 </div>
                 
                 <div class="card" style="flex-grow: 1;">
                     <div class="section-header">
                         <h2>My Tasks</h2>
                         <div style="display: flex; gap: 10px;">
-                            <form method="GET" action="add_task.php" class="search-bar">
+                            <form method="GET" action="" class="search-bar">
                                 <input type="text" name="search" class="search-input" placeholder="Search tasks..." value="<?php echo htmlspecialchars($searchQuery); ?>">
                                 <button type="submit" class="search-button"><i class="fas fa-search"></i></button>
                             </form>
@@ -714,12 +826,28 @@ foreach ($user['tasks'] as $task) {
                         </div>
                     </div>
                     
+                    <!-- Date Filter Dropdown -->
+                    <div class="filter-container">
+                        <form method="GET" action="" style="display: flex; gap: 10px;">
+                            <?php if (!empty($searchQuery)): ?>
+                                <input type="hidden" name="search" value="<?php echo htmlspecialchars($searchQuery); ?>">
+                            <?php endif; ?>
+                            <select name="date_filter" class="filter-select" onchange="this.form.submit()">
+                                <option value="all" <?php echo $dateFilter === 'all' ? 'selected' : ''; ?>>All Dates</option>
+                                <option value="today" <?php echo $dateFilter === 'today' ? 'selected' : ''; ?>>Today</option>
+                                <option value="week" <?php echo $dateFilter === 'week' ? 'selected' : ''; ?>>This Week</option>
+                                <option value="month" <?php echo $dateFilter === 'month' ? 'selected' : ''; ?>>This Month</option>
+                                <option value="overdue" <?php echo $dateFilter === 'overdue' ? 'selected' : ''; ?>>Overdue</option>
+                            </select>
+                        </form>
+                    </div>
+                    
                     <div class="task-list">
                         <?php if (empty($user['tasks'])): ?>
                             <div class="empty-state">
                                 <i class="far fa-check-circle"></i>
                                 <h3>No tasks found</h3>
-                                <p><?php echo empty($searchQuery) ? 'Get started by adding your first task' : 'No tasks match your search'; ?></p>
+                                <p><?php echo (empty($searchQuery) && $dateFilter === 'all' ? 'Get started by adding your first task' : 'No tasks match your criteria'); ?></p>
                                 <button class="button" id="empty-add-btn">Add Task</button>
                             </div>
                         <?php else: ?>
@@ -738,29 +866,47 @@ foreach ($user['tasks'] as $task) {
                                         $dueStatus = 'upcoming';
                                     }
                                 }
+                                
+                                $isShared = ($task['task_type'] === 'shared');
+                                $canEditTask = (!$isShared || ($isShared && $task['can_edit']));
                             ?>
                             <div class="task-item <?php echo $task['completed'] ? 'completed' : $dueStatus; ?>" data-task-id="<?php echo $task['id']; ?>">
                                 <div class="task-left">
-                                    <div class="task-checkbox <?php echo $task['completed'] ? 'checked' : ''; ?>" data-task-id="<?php echo $task['id']; ?>"></div>
+                                    <div class="task-checkbox <?php echo $task['completed'] ? 'checked' : ''; ?>"
+                                         data-task-id="<?php echo $task['id']; ?>"
+                                         <?php if (!$canEditTask) echo 'style="opacity:0.5;cursor:not-allowed" title="No edit permission"'; ?>>
+                                    </div>
+                                    
                                     <div class="task-content">
-                                        <h4><?php echo htmlspecialchars($task['title']); ?></h4>
-                                        <div class="task-meta">
-                                            <span><i class="far fa-calendar"></i> <?php echo htmlspecialchars(date('F j, Y', strtotime($task['due_date']))); ?></span>
-                                            <?php if (!empty($task['time'])): ?>
-                                            <span><i class="far fa-clock"></i> <?php echo htmlspecialchars(date('h:i A', strtotime($task['time']))); ?></span>
+                                        <h4>
+                                            <?php echo htmlspecialchars($task['title']); ?>
+                                            <?php if ($isShared): ?>
+                                                <span class="tag shared" title="Shared by <?php echo htmlspecialchars($task['owner_name']); ?>">
+                                                    Shared
+                                                </span>
                                             <?php endif; ?>
+                                        </h4>
+                                        
+                                        <?php if ($isShared): ?>
+                                            <div class="task-owner">Shared by: <?php echo htmlspecialchars($task['owner_name']); ?></div>
+                                        <?php endif; ?>
+                                        
+                                        <div class="task-meta">
+                                            <span><i class="far fa-calendar"></i> <?php echo htmlspecialchars(date('M j, Y', strtotime($task['due_date']))); ?></span>
+                                            <?php if (!empty($task['time'])): ?>
+                                                <span><i class="far fa-clock"></i> <?php echo htmlspecialchars(date('g:i A', strtotime($task['time']))); ?></span>
+                                            <?php endif; ?>
+                                            
                                             <?php if (!$task['completed'] && $dueStatus): ?>
-                                            <span class="due-date-badge <?php echo $dueStatus; ?>">
-                                                <?php 
-                                                    echo $dueStatus === 'overdue' ? 'Overdue' : 
-                                                         ($dueStatus === 'today' ? 'Due Today' : 'Upcoming');
-                                                ?>
-                                            </span>
+                                                <span class="due-date-badge <?php echo $dueStatus; ?>">
+                                                    <?php echo ucfirst($dueStatus); ?>
+                                                </span>
                                             <?php endif; ?>
                                         </div>
+                                        
                                         <div class="progress-bar">
                                             <div class="progress-fill" 
-                                                 style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%; 
+                                                 style="width: <?php echo $task['completed'] ? '100' : $task['progress']; ?>%;
                                                         background-color: <?php 
                                                             if ($task['priority'] === 'high') echo 'var(--danger)';
                                                             elseif ($task['priority'] === 'medium') echo 'var(--warning)';
@@ -770,15 +916,41 @@ foreach ($user['tasks'] as $task) {
                                         </div>
                                     </div>
                                 </div>
+                                
                                 <div class="task-right">
-                                    <span class="tag <?php echo $task['priority']; ?>"><?php echo ucfirst($task['priority']); ?></span>
+                                    <span class="tag <?php echo $task['priority']; ?>">
+                                        <?php echo ucfirst($task['priority']); ?>
+                                    </span>
+                                    
                                     <div class="action-buttons">
-                                        <div class="action-button edit-task" style="background-color: var(--primary);" data-task-id="<?php echo $task['id']; ?>">
-                                            <i class="fas fa-pen"></i>
-                                        </div>
-                                        <div class="action-button delete-task" style="background-color: var(--danger);" data-task-id="<?php echo $task['id']; ?>">
-                                            <i class="fas fa-trash"></i>
-                                        </div>
+                                        <?php if ($canEditTask): ?>
+                                            <div class="action-button edit-task" 
+                                                 style="background-color: var(--primary);" 
+                                                 data-task-id="<?php echo $task['id']; ?>">
+                                                <i class="fas fa-pen"></i>
+                                            </div>
+                                            
+                                            <div class="action-button delete-task" 
+                                                 style="background-color: var(--danger);" 
+                                                 data-task-id="<?php echo $task['id']; ?>">
+                                                <i class="fas fa-trash"></i>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="action-button disabled" title="No edit permission">
+                                                <i class="fas fa-pen"></i>
+                                            </div>
+                                            <div class="action-button disabled" title="No delete permission">
+                                                <i class="fas fa-trash"></i>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (!$isShared): ?>
+                                            <div class="action-button share-task" 
+                                                 style="background-color: var(--secondary);" 
+                                                 data-task-id="<?php echo $task['id']; ?>">
+                                                <i class="fas fa-share-alt"></i>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>
@@ -827,9 +999,9 @@ foreach ($user['tasks'] as $task) {
                     <input type="number" id="task-progress" name="progress" min="0" max="100" value="0">
                 </div>
                 <div class="form-group checkbox-group">
-    <input type="checkbox" id="task-reminder" name="reminder">
-    <label for="task-reminder">Set Reminder</label>
-</div>
+                    <input type="checkbox" id="task-reminder" name="reminder">
+                    <label for="task-reminder">Set Reminder</label>
+                </div>
                 <button type="submit" class="button" style="width: 100%;">Save Task</button>
             </form>
         </div>
@@ -838,16 +1010,12 @@ foreach ($user['tasks'] as $task) {
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Handle checkbox toggling with AJAX
-            const checkboxes = document.querySelectorAll('.task-checkbox');
-            checkboxes.forEach(checkbox => {
-                // Store original progress width
-                const taskItem = checkbox.closest('.task-item');
-                const progressFill = taskItem.querySelector('.progress-fill');
-                if (!checkbox.classList.contains('checked')) {
-                    progressFill.dataset.originalWidth = progressFill.style.width;
-                }
-                
+            document.querySelectorAll('.task-checkbox').forEach(checkbox => {
                 checkbox.addEventListener('click', function() {
+                    if (this.style.opacity === '0.5' && this.style.cursor === 'not-allowed') {
+                        return; // Skip if no edit permission
+                    }
+                    
                     const taskId = this.getAttribute('data-task-id');
                     const isCompleted = !this.classList.contains('checked');
                     const taskItem = this.closest('.task-item');
@@ -863,8 +1031,7 @@ foreach ($user['tasks'] as $task) {
                         progressFill.style.backgroundColor = '#ccc';
                     } else {
                         progressFill.style.width = progressFill.dataset.originalWidth;
-                        // Restore original color based on priority
-                        const priority = taskItem.querySelector('.tag').className.split(' ')[1];
+                        const priority = taskItem.querySelector('.tag:not(.shared)').className.split(' ')[1];
                         progressFill.style.backgroundColor = 
                             priority === 'high' ? 'var(--danger)' :
                             priority === 'medium' ? 'var(--warning)' :
@@ -885,7 +1052,6 @@ foreach ($user['tasks'] as $task) {
                     })
                     .then(data => {
                         if (!data.success) {
-                            // Revert UI changes if failed
                             this.classList.toggle('checked');
                             taskItem.classList.toggle('completed');
                             if (isCompleted) {
@@ -895,7 +1061,6 @@ foreach ($user['tasks'] as $task) {
                             }
                             alert('Failed to update task status');
                         } else {
-                            // Reload to update stats
                             location.reload();
                         }
                     })
@@ -996,7 +1161,6 @@ foreach ($user['tasks'] as $task) {
                         .then(data => {
                             if (data.success) {
                                 taskItem.remove();
-                                // Update stats
                                 location.reload();
                             } else {
                                 alert('Failed to delete task');
@@ -1011,6 +1175,89 @@ foreach ($user['tasks'] as $task) {
                             this.style.pointerEvents = 'auto';
                         });
                     }
+                });
+            });
+            
+            // Share task buttons
+            document.querySelectorAll('.share-task').forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const taskId = this.getAttribute('data-task-id');
+                    
+                    // Create a share modal
+                    const shareModal = document.createElement('div');
+                    shareModal.className = 'modal';
+                    shareModal.id = 'share-modal';
+                    shareModal.innerHTML = `
+                        <div class="modal-content" style="max-width: 400px;">
+                            <div class="modal-header">
+                                <h3>Share Task</h3>
+                                <span class="close-share-modal">&times;</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="share-email">Email Address</label>
+                                <input type="email" id="share-email" placeholder="Enter user's email" required>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <input type="checkbox" id="can-edit" name="can_edit">
+                                <label for="can-edit">Allow editing</label>
+                            </div>
+                            <button id="confirm-share" class="button" style="width: 100%;">Share Task</button>
+                        </div>
+                    `;
+                    document.body.appendChild(shareModal);
+                    shareModal.style.display = 'flex';
+
+                    // Close modal
+                    document.querySelector('.close-share-modal').addEventListener('click', function() {
+                        shareModal.remove();
+                    });
+
+                    // Close when clicking outside
+                    shareModal.addEventListener('click', function(e) {
+                        if (e.target === this) {
+                            this.remove();
+                        }
+                    });
+
+                    // Handle share confirmation
+                    document.getElementById('confirm-share').addEventListener('click', function() {
+                        const email = document.getElementById('share-email').value;
+                        const canEdit = document.getElementById('can-edit').checked;
+                        
+                        if (!email) {
+                            alert('Please enter an email address');
+                            return;
+                        }
+
+                        this.disabled = true;
+                        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sharing...';
+
+                        fetch('share_task.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: `task_id=${taskId}&email=${encodeURIComponent(email)}&can_edit=${canEdit ? 1 : 0}`
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert('Task shared successfully!');
+                                shareModal.remove();
+                            } else {
+                                alert('Failed to share task: ' + (data.message || 'Unknown error'));
+                                this.disabled = false;
+                                this.innerHTML = 'Share Task';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('Error sharing task');
+                            this.disabled = false;
+                            this.innerHTML = 'Share Task';
+                        });
+                    });
                 });
             });
             

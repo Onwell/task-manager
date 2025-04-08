@@ -341,7 +341,6 @@ $averageProgress = $totalTasks > 0 ? round(array_sum($progressData) / $totalTask
                 <ul class="main-menu">
                 <li><a href="http://localhost/task-manager/dashboard/"><i class="fas fa-home"></i> Dashboard</a></li>
                     <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="#"><i class="fas fa-project-diagram"></i> Projects</a></li>
                     <li><a href="calendar.php"><i class="fas fa-calendar"></i> Calendar</a></li>
                     <li><a href="report.php" class="active"><i class="fas fa-chart-line"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>

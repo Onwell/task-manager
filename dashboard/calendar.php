@@ -337,12 +337,12 @@ foreach ($tasks as $task) {
             <div class="sidebar">
                 <ul class="main-menu">
                     <li><a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a></li>
-                    <li><a href="tasks.php"><i class="fas fa-tasks"></i> Tasks</a></li>
-                    <li><a href="projects.php"><i class="fas fa-project-diagram"></i> Projects</a></li>
+                    <li><a href="add_task.php"><i class="fas fa-tasks"></i> Tasks</a></li>
                     <li><a href="calendar.php" class="active"><i class="fas fa-calendar"></i> Calendar</a></li>
-                    <li><a href="reports.php"><i class="fas fa-chart-bar"></i> Reports</a></li>
+                    <li><a href="report.php"><i class="fas fa-chart-bar"></i> Reports</a></li>
                     <li><a href="settings.php"><i class="fas fa-cog"></i> Settings</a></li>
-                    <li><a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    <li><a href="activity_log.php"><i class="fas fa-history"></i> Activity Log</a></li>
+                    <li><a href="http://localhost/task-manager/"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 </ul>
             </div>
             
