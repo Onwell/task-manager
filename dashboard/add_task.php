@@ -106,11 +106,9 @@ $sharedTasksStmt = $pdo->prepare("
 $sharedTasksStmt->execute([':user_id' => $userId]);
 $sharedTasks = $sharedTasksStmt->fetch(PDO::FETCH_ASSOC)['shared_count'];
 
-
 // Count total users
 $userCountStmt = $pdo->query("SELECT COUNT(*) as total_users FROM users");
 $totalUsers = $userCountStmt->fetch(PDO::FETCH_ASSOC)['total_users'];
-
 
 foreach ($user['tasks'] as $task) {
     if ($task['completed']) {

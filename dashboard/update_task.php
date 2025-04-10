@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'activity_logger.php'; // Include the activity logger
+require_once 'activity_logger.php';
 
 // Database connection
 $host = 'localhost';
@@ -29,17 +29,27 @@ if (empty($taskId) || !isset($completed)) {
 }
 
 try {
-    // Get task details for the log
-    $taskStmt = $pdo->prepare("SELECT title FROM tasks WHERE id = ? AND user_id = ?");
-    $taskStmt->execute([$taskId, $userId]);
+    // Check if user owns the task or has edit permissions through sharing
+    $taskStmt = $pdo->prepare("
+        SELECT t.title, t.user_id, st.can_edit 
+        FROM tasks t
+        LEFT JOIN shared_tasks st ON t.id = st.task_id AND st.shared_with_id = ?
+        WHERE t.id = ? AND (t.user_id = ? OR st.shared_with_id = ?)
+    ");
+    $taskStmt->execute([$userId, $taskId, $userId, $userId]);
     $taskData = $taskStmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$taskData) {
         die(json_encode(['success' => false, 'message' => 'Task not found or access denied']));
     }
     
-    $stmt = $pdo->prepare("UPDATE tasks SET completed = ? WHERE id = ? AND user_id = ?");
-    $result = $stmt->execute([$completed, $taskId, $userId]);
+    // If task is shared, check edit permission
+    if ($taskData['user_id'] != $userId && !$taskData['can_edit']) {
+        die(json_encode(['success' => false, 'message' => 'No permission to edit this task']));
+    }
+    
+    $stmt = $pdo->prepare("UPDATE tasks SET completed = ? WHERE id = ?");
+    $result = $stmt->execute([$completed, $taskId]);
     
     if ($result) {
         // Log the activity

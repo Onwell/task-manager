@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'activity_logger.php'; // Include the activity logger
+require_once 'activity_logger.php';
 
 // Database connection
 $host = 'localhost';
@@ -26,19 +26,18 @@ $action = $_POST['action'] ?? '';
 // Process add task
 if ($action === 'add') {
     $title = $_POST['title'] ?? '';
-    $description = $_POST['description'] ?? ''; // Added this line
+    $description = $_POST['description'] ?? '';
     $dueDate = $_POST['due_date'] ?? '';
     $time = $_POST['time'] ?? null;
     $priority = $_POST['priority'] ?? 'medium';
     $progress = $_POST['progress'] ?? 0;
-    $reminder = isset($_POST['reminder']) ? 1 : 0; // Added this line
+    $reminder = isset($_POST['reminder']) ? 1 : 0;
     
     if (empty($title) || empty($dueDate)) {
         die(json_encode(['success' => false, 'message' => 'Title and due date are required']));
     }
     
     try {
-        // Updated query to include description and reminder
         $stmt = $pdo->prepare("INSERT INTO tasks 
             (user_id, title, description, due_date, time, priority, progress, reminder, completed) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)");
@@ -70,26 +69,38 @@ if ($action === 'add') {
 else if ($action === 'edit') {
     $taskId = $_POST['task_id'] ?? '';
     $title = $_POST['title'] ?? '';
-    $description = $_POST['description'] ?? ''; // Added this line
+    $description = $_POST['description'] ?? '';
     $dueDate = $_POST['due_date'] ?? '';
     $time = $_POST['time'] ?? null;
     $priority = $_POST['priority'] ?? 'medium';
     $progress = $_POST['progress'] ?? 0;
-    $reminder = isset($_POST['reminder']) ? 1 : 0; // Added this line
+    $reminder = isset($_POST['reminder']) ? 1 : 0;
     
     if (empty($taskId) || empty($title) || empty($dueDate)) {
         die(json_encode(['success' => false, 'message' => 'Task ID, title, and due date are required']));
     }
     
     try {
-        // Verify task belongs to the user
-        $checkStmt = $pdo->prepare("SELECT id FROM tasks WHERE id = ? AND user_id = ?");
-        $checkStmt->execute([$taskId, $userId]);
-        if (!$checkStmt->fetch()) {
+        // Check if user owns the task or has edit permissions through sharing
+        $checkStmt = $pdo->prepare("
+            SELECT t.id, t.user_id, st.can_edit 
+            FROM tasks t
+            LEFT JOIN shared_tasks st ON t.id = st.task_id AND st.shared_with_id = ?
+            WHERE t.id = ? AND (t.user_id = ? OR st.shared_with_id = ?)
+        ");
+        $checkStmt->execute([$userId, $taskId, $userId, $userId]);
+        $taskData = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$taskData) {
             die(json_encode(['success' => false, 'message' => 'Task not found or access denied']));
         }
         
-        // Updated query to include description and reminder
+        // If task is shared, check edit permission
+        if ($taskData['user_id'] != $userId && !$taskData['can_edit']) {
+            die(json_encode(['success' => false, 'message' => 'No permission to edit this task']));
+        }
+
+        // Update the task
         $stmt = $pdo->prepare("UPDATE tasks SET 
             title = ?, 
             description = ?, 
@@ -98,7 +109,7 @@ else if ($action === 'edit') {
             priority = ?, 
             progress = ?, 
             reminder = ? 
-            WHERE id = ? AND user_id = ?");
+            WHERE id = ?");
         $result = $stmt->execute([
             $title, 
             $description, 
@@ -107,8 +118,7 @@ else if ($action === 'edit') {
             $priority, 
             $progress, 
             $reminder, 
-            $taskId, 
-            $userId
+            $taskId
         ]);
         
         if ($result) {
