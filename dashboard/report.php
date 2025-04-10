@@ -81,19 +81,19 @@ $averageProgress = $totalTasks > 0 ? round(array_sum($progressData) / $totalTask
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Manager / Reports</title>
     <style>
-        :root {
-            --primary: #4361ee;
-            --secondary: #3f37c9;
-            --success: #4cc9f0;
-            --danger: #f72585;
-            --warning: #f8961e;
-            --light: #f8f9fa;
-            --dark: #212529;
-            --gray: #6c757d;
-            --border-radius: 10px;
-            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            --transition: all 0.3s ease;
-        }
+:root {
+    --primary: #E5A624;  /* Primary orange */
+    --secondary: #2E5C8A; /* Primary blue */
+    --success: #4cc9f0;
+    --danger: #D99000;   /* Dark orange */
+    --warning: #FFF0D3;  /* Light orange */
+    --light: #D1E0F0;    /* Light blue */
+    --dark: #1A3A5F;     /* Dark blue */
+    --gray: #666666;     /* Light text */
+    --border-radius: 10px;
+    --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --transition: all 0.3s ease;
+}
         
         * {
             margin: 0;
